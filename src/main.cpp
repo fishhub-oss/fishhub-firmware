@@ -3,6 +3,7 @@
 #include <DallasTemperature.h>
 #include "pins.h"
 #include "wifi_ntp.h"
+#include "senml.h"
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
@@ -37,6 +38,8 @@ void loop() {
   float temp = readTemperatureCelsius();
   if (!isnan(temp)) {
     Serial.printf("Temp: %.2f °C\n", temp);
+    String payload = buildSenMLPayload(temp, time(nullptr));
+    Serial.printf("SenML: %s\n", payload.c_str());
   }
   delay(5000);
 }
