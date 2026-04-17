@@ -2,3 +2,6 @@
 
 #define WIFI_SSID     "your-ssid"
 #define WIFI_PASSWORD "your-password"
+
+#define SERVER_URL   "http://192.168.x.x:8080/readings"
+#define DEVICE_TOKEN "your-32-byte-hex-token"
