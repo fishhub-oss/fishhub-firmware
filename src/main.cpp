@@ -2,6 +2,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "pins.h"
+#include "wifi_ntp.h"
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
@@ -19,6 +20,9 @@ float readTemperatureCelsius() {
 void setup() {
   Serial.begin(115200);
   Serial.println("FishHub firmware booting...");
+
+  connectWifi();
+  waitForNtp();
 
   sensors.begin();
   int deviceCount = sensors.getDeviceCount();
