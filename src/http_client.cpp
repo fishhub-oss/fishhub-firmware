@@ -8,6 +8,10 @@ static bool doPost(const String& payload, int& statusCode) {
   String deviceToken  = nvsStore.get("device_token");
   if (serverUrl.isEmpty())   serverUrl   = SERVER_URL;
   if (deviceToken.isEmpty()) deviceToken = DEVICE_TOKEN;
+  if (serverUrl.startsWith("http://") && !serverUrl.startsWith("http://192.") &&
+      !serverUrl.startsWith("http://10.") && !serverUrl.startsWith("http://172.")) {
+    serverUrl.replace("http://", "https://");
+  }
 
   HTTPClient http;
   http.begin(serverUrl + "/readings");

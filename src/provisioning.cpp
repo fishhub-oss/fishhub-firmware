@@ -237,6 +237,11 @@ ActivationError activateDevice(const String& provisionCode) {
   String ssid      = nvsStore.get("wifi_ssid");
   String password  = nvsStore.get("wifi_pass");
   String serverUrl = nvsStore.get("server_url");
+  // Normalize to HTTPS — Railway and most hosted servers require it
+  if (serverUrl.startsWith("http://") && !serverUrl.startsWith("http://192.") &&
+      !serverUrl.startsWith("http://10.") && !serverUrl.startsWith("http://172.")) {
+    serverUrl.replace("http://", "https://");
+  }
 
   Serial.printf("Activation: connecting to Wi-Fi SSID=%s\n", ssid.c_str());
   WiFi.mode(WIFI_STA);
