@@ -107,13 +107,23 @@ static String buildForm(const String& errorMsg, const String& prefillSsid,
   // Password
   html += "<div class='field'>"
     "<label for='wifi_password'>Wi-Fi Password</label>"
-    "<input id='wifi_password' name='wifi_password' type='password' autocomplete='off'>"
+    "<div style='position:relative'>"
+    "<input id='wifi_password' name='wifi_password' type='password' "
+    "autocomplete='off' style='padding-right:2.5rem'>"
+    "<button type='button' onclick=\""
+      "var i=document.getElementById('wifi_password');"
+      "i.type=i.type==='password'?'text':'password';"
+      "this.textContent=i.type==='password'?'Show':'Hide';"
+    "\" style='position:absolute;right:0.5rem;top:50%;transform:translateY(-50%);"
+    "width:auto;margin:0;padding:0 0.5rem;background:none;color:#737373;"
+    "border:none;font-size:0.75rem;cursor:pointer'>Show</button>"
+    "</div>"
     "</div>";
 
   // Server URL
   html += "<div class='field'>"
     "<label for='server_url'>Server URL</label>"
-    "<input id='server_url' name='server_url' "
+    "<input id='server_url' name='server_url' autocapitalize='none' autocorrect='off' "
     "placeholder='http://192.168.1.10:8080' required value='" + prefillUrl + "'>"
     "</div>";
 
