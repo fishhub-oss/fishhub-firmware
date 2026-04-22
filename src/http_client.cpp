@@ -1,12 +1,18 @@
 #include "http_client.h"
 #include <HTTPClient.h>
+#include "nvs_store.h"
 #include "config.h"
 
 static bool doPost(const String& payload, int& statusCode) {
+  String serverUrl    = nvsStore.get("server_url");
+  String deviceToken  = nvsStore.get("device_token");
+  if (serverUrl.isEmpty())   serverUrl   = SERVER_URL;
+  if (deviceToken.isEmpty()) deviceToken = DEVICE_TOKEN;
+
   HTTPClient http;
-  http.begin(SERVER_URL);
+  http.begin(serverUrl);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", "Bearer " DEVICE_TOKEN);
+  http.addHeader("Authorization", "Bearer " + deviceToken);
 
   unsigned long start = millis();
   statusCode = http.POST(payload);

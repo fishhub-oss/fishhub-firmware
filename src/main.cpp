@@ -2,12 +2,18 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "pins.h"
+#include "nvs_store.h"
 #include "wifi_ntp.h"
 #include "senml.h"
 #include "http_client.h"
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
+
+static void logNvsKey(const char* key) {
+  String val = nvsStore.get(key);
+  Serial.printf("  NVS %-14s %s\n", key, val.isEmpty() ? "MISSING" : "present");
+}
 
 float readTemperatureCelsius() {
   sensors.requestTemperatures();
@@ -22,6 +28,26 @@ float readTemperatureCelsius() {
 void setup() {
   Serial.begin(115200);
   Serial.println("FishHub firmware booting...");
+
+  nvsStore.begin();
+
+  Serial.println("NVS key status:");
+  logNvsKey("wifi_ssid");
+  logNvsKey("wifi_pass");
+  logNvsKey("server_url");
+  logNvsKey("device_token");
+
+  bool provisioned =
+    !nvsStore.get("wifi_ssid").isEmpty() &&
+    !nvsStore.get("wifi_pass").isEmpty() &&
+    !nvsStore.get("server_url").isEmpty() &&
+    !nvsStore.get("device_token").isEmpty();
+
+  if (!provisioned) {
+    Serial.println("One or more NVS keys missing — entering provisioning mode");
+    // startProvisioning() will be wired in #18 — device reboots after activation
+    while (true) delay(1000);
+  }
 
   connectWifi();
   waitForNtp();

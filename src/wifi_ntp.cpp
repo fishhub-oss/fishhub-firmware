@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <time.h>
 #include "wifi_ntp.h"
+#include "nvs_store.h"
 #include "config.h"
 
 static const int WIFI_TIMEOUT_MS  = 10000;
@@ -9,9 +10,14 @@ static const int WIFI_MAX_RETRIES = 3;
 static const int NTP_TIMEOUT_MS   = 10000;
 
 void connectWifi() {
+  String ssid     = nvsStore.get("wifi_ssid");
+  String password = nvsStore.get("wifi_pass");
+  if (ssid.isEmpty())     ssid     = WIFI_SSID;
+  if (password.isEmpty()) password = WIFI_PASSWORD;
+
   for (int attempt = 1; attempt <= WIFI_MAX_RETRIES; attempt++) {
     Serial.printf("Wi-Fi connecting (attempt %d/%d)...\n", attempt, WIFI_MAX_RETRIES);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(ssid.c_str(), password.c_str());
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT_MS) {
