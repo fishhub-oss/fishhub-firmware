@@ -207,7 +207,7 @@ static void handleConfigure() {
 // ─── activation (#19) ────────────────────────────────────────────────────────
 
 static void restartAP() {
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP("FishHub-Setup");
 }
 
@@ -286,10 +286,11 @@ void startProvisioning() {
   scannedSSIDs.clear();
   scanDone = false;
 
-  xTaskCreatePinnedToCore(scanTask, "wifi_scan", 4096, nullptr, 1, nullptr, 0);
-
-  WiFi.mode(WIFI_AP);
+  // WIFI_AP_STA is required for WiFi.scanNetworks() to work while hosting an AP
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP("FishHub-Setup");
+
+  xTaskCreatePinnedToCore(scanTask, "wifi_scan", 4096, nullptr, 1, nullptr, 0);
   Serial.printf("AP started — SSID: FishHub-Setup  IP: %s\n",
                 WiFi.softAPIP().toString().c_str());
 
