@@ -10,7 +10,7 @@ static bool doPost(const String& payload, int& statusCode) {
   if (deviceToken.isEmpty()) deviceToken = DEVICE_TOKEN;
 
   HTTPClient http;
-  http.begin(serverUrl);
+  http.begin(serverUrl + "/readings");
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", "Bearer " + deviceToken);
 
