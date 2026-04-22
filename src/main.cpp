@@ -3,6 +3,7 @@
 #include <DallasTemperature.h>
 #include "pins.h"
 #include "nvs_store.h"
+#include "provisioning.h"
 #include "wifi_ntp.h"
 #include "senml.h"
 #include "http_client.h"
@@ -45,8 +46,7 @@ void setup() {
 
   if (!provisioned) {
     Serial.println("One or more NVS keys missing — entering provisioning mode");
-    // startProvisioning() will be wired in #18 — device reboots after activation
-    while (true) delay(1000);
+    startProvisioning(); // never returns — device reboots after activation
   }
 
   connectWifi();
