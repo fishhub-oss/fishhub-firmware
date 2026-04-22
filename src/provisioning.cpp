@@ -204,12 +204,81 @@ static void handleConfigure() {
   }
 }
 
-// ─── public API ──────────────────────────────────────────────────────────────
+// ─── activation (#19) ────────────────────────────────────────────────────────
 
-// Stub — replaced by full implementation in #19
+static void restartAP() {
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("FishHub-Setup");
+}
+
 ActivationError activateDevice(const String& provisionCode) {
-  (void)provisionCode;
-  return ActivationError::ServerError;
+  String ssid      = nvsStore.get("wifi_ssid");
+  String password  = nvsStore.get("wifi_pass");
+  String serverUrl = nvsStore.get("server_url");
+
+  Serial.printf("Activation: connecting to Wi-Fi SSID=%s\n", ssid.c_str());
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), password.c_str());
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+    delay(200);
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Activation: Wi-Fi connect timed out");
+    restartAP();
+    return ActivationError::WifiFailed;
+  }
+  Serial.printf("Activation: Wi-Fi connected — IP: %s\n",
+                WiFi.localIP().toString().c_str());
+
+  String endpoint = serverUrl + "/devices/activate";
+  String body     = "{\"code\":\"" + provisionCode + "\"}";
+
+  auto doPost = [&](int& statusOut) -> String {
+    HTTPClient http;
+    http.begin(endpoint);
+    http.addHeader("Content-Type", "application/json");
+    statusOut = http.POST(body);
+    String resp = (statusOut > 0) ? http.getString() : "";
+    Serial.printf("Activation: POST %s -> %d\n", endpoint.c_str(), statusOut);
+    http.end();
+    return resp;
+  };
+
+  int status = 0;
+  String resp = doPost(status);
+
+  if (status <= 0 || status >= 500) {
+    Serial.println("Activation: server error, retrying once...");
+    delay(2000);
+    resp = doPost(status);
+  }
+
+  if (status >= 400 && status < 500) {
+    restartAP();
+    return ActivationError::InvalidCode;
+  }
+  if (status <= 0 || status >= 500) {
+    restartAP();
+    return ActivationError::ServerError;
+  }
+
+  // Parse token from response
+  JsonDocument doc;
+  DeserializationError jsonErr = deserializeJson(doc, resp);
+  if (jsonErr || !doc["token"].is<const char*>()) {
+    Serial.println("Activation: failed to parse token from response");
+    restartAP();
+    return ActivationError::ServerError;
+  }
+
+  String token = doc["token"].as<String>();
+  nvsStore.set("device_token", token);
+  Serial.println("Activation successful. Rebooting...");
+  delay(1000);
+  ESP.restart();
+  return ActivationError::None; // unreachable
 }
 
 void startProvisioning() {
