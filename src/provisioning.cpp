@@ -131,6 +131,21 @@ static String buildForm(const String& errorMsg, const String& prefillSsid,
   return html;
 }
 
+static String buildConnecting() {
+  String html = "<!DOCTYPE html><html lang='en'><head>"
+    "<meta charset='UTF-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+    "<title>FishHub Setup</title>";
+  html += CSS;
+  html += "</head><body><div class='card'>"
+    "<h1>FishHub</h1>"
+    "<p class='subtitle'>Connecting to Wi-Fi and activating your device&hellip;</p>"
+    "<p class='hint' style='text-align:center;margin-top:1rem'>"
+    "This may take up to 15 seconds. The device will reboot when done.</p>"
+    "</div></body></html>";
+  return html;
+}
+
 static String buildSuccess() {
   String html = "<!DOCTYPE html><html lang='en'><head>"
     "<meta charset='UTF-8'>"
@@ -148,6 +163,7 @@ static String buildSuccess() {
 // ─── WebServer + handlers ─────────────────────────────────────────────────────
 
 static WebServer server(80);
+static bool pendingRestart = false;
 
 static void handleRoot() {
   server.send(200, "text/html", buildForm("", "", ""));
@@ -178,14 +194,18 @@ static void handleConfigure() {
   nvsStore.set("wifi_pass",   password);
   nvsStore.set("server_url",  serverUrl);
 
+  // Send a "connecting" page immediately so the browser has a response
+  // before we drop the AP to connect to the user's Wi-Fi network.
+  server.send(200, "text/html", buildConnecting());
+  server.client().flush();
+  delay(500);
+
   ActivationError err = activateDevice(code);
 
+  // activateDevice reboots on success — only error paths reach here.
+  // The AP is restarted inside activateDevice() before returning,
+  // so we can serve the error page normally.
   switch (err) {
-    case ActivationError::None:
-      server.send(200, "text/html", buildSuccess());
-      delay(2000);
-      ESP.restart();
-      break;
     case ActivationError::WifiFailed:
       server.send(200, "text/html",
         buildForm("Could not connect to Wi-Fi. Check the network name and password.",
@@ -200,6 +220,8 @@ static void handleConfigure() {
       server.send(200, "text/html",
         buildForm("Could not reach the server. Check the Server URL.",
                   ssid, serverUrl));
+      break;
+    default:
       break;
   }
 }
