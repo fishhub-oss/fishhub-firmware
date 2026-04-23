@@ -4,8 +4,8 @@
 #include "config.h"
 
 static bool doPost(const String& payload, int& statusCode) {
-  String serverUrl    = nvsStore.get("server_url");
-  String deviceToken  = nvsStore.get("device_token");
+  String serverUrl   = nvsStore.get("server_url");
+  String deviceToken = nvsStore.get("device_jwt");
   if (serverUrl.isEmpty())   serverUrl   = SERVER_URL;
   if (deviceToken.isEmpty()) deviceToken = DEVICE_TOKEN;
   if (serverUrl.startsWith("http://") && !serverUrl.startsWith("http://192.") &&

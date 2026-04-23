@@ -343,7 +343,7 @@ ActivationError activateDevice(const String& provisionCode) {
   }
 
   String token = doc["token"].as<String>();
-  nvsStore.set("device_token", token);
+  nvsStore.set("device_jwt", token);
   Serial.println("Activation successful. Rebooting...");
   delay(1000);
   ESP.restart();
@@ -352,7 +352,7 @@ ActivationError activateDevice(const String& provisionCode) {
 
 void startProvisioning() {
   // Reconfiguring if the device already has a token — no provisioning code needed
-  reconfiguring = !nvsStore.get("device_token").isEmpty();
+  reconfiguring = !nvsStore.get("device_jwt").isEmpty();
   Serial.printf("Provisioning mode: %s\n", reconfiguring ? "reconfiguration" : "fresh");
 
   scanMutex = xSemaphoreCreateMutex();
