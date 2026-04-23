@@ -4,7 +4,7 @@
 
 - [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/) (CLI) or PlatformIO IDE extension
 - USB cable to connect the NodeMCU-32S
-- `include/config.h` filled in (see [configuration.md](configuration.md))
+- Credentials either provisioned via captive portal (recommended) or set in `include/config.h` as fallback (see [configuration.md](configuration.md))
 
 ## Common commands
 
@@ -27,10 +27,11 @@ pio test -e native
 
 ## Serial output
 
-After flashing, the Serial monitor shows the boot sequence and each reading cycle:
+### Normal boot (credentials present in NVS)
 
 ```
 FishHub firmware booting...
+NVS credentials found — skipping provisioning
 Wi-Fi connecting (attempt 1/3)...
 Wi-Fi connected — IP: 192.168.1.42
 Waiting for NTP sync...
@@ -42,7 +43,28 @@ Temp: 23.41 °C
 POST 201 in 76ms
 ```
 
-A `POST error:` line means a network failure. A `POST 401` means the token in `config.h` is invalid. A `POST 400` means the server rejected the payload.
+### Provisioning boot (missing NVS credentials)
+
+```
+FishHub firmware booting...
+NVS credentials missing — starting provisioning AP
+AP started: FishHub-Setup (192.168.4.1)
+Scanning Wi-Fi networks...
+Captive portal running — waiting for user input
+```
+
+The device stays in this state until the user submits the provisioning form.
+
+### Reconfiguration (BOOT button held 3 s)
+
+```
+Reset button held — entering reconfiguration mode
+AP started: FishHub-Setup (192.168.4.1)
+Reconfiguration mode — provisioning code not required
+Captive portal running — waiting for user input
+```
+
+A `POST error:` line during normal operation means a network failure. A `POST 401` means the stored token is invalid (re-provision the device). A `POST 400` means the server rejected the payload.
 
 ## Unit tests
 

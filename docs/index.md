@@ -1,6 +1,6 @@
 # fishhub-firmware — Documentation Index
 
-ESP32 Arduino firmware for FishHub aquarium monitoring. On each boot cycle it reads water temperature from a DS18B20 probe, formats a SenML JSON payload, POSTs it to the FishHub backend, and loops.
+ESP32 Arduino firmware for FishHub aquarium monitoring. On first boot (or after a factory reset) the device starts a captive-portal Wi-Fi AP for provisioning. Once provisioned, each boot cycle reads water temperature from a DS18B20 probe, formats a SenML JSON payload, POSTs it to the FishHub backend, and loops.
 
 ## Contents
 
@@ -14,19 +14,19 @@ ESP32 Arduino firmware for FishHub aquarium monitoring. On each boot cycle it re
 ## Quick start
 
 ```bash
-# 1. Copy and fill in credentials
-cp include/config.h.example include/config.h
-# edit config.h with your Wi-Fi, SERVER_URL, and DEVICE_TOKEN
-
-# 2. Build
-pio run
-
-# 3. Flash
+# 1. Build and flash (no config.h required for provisioned devices)
 pio run --target upload
 
-# 4. Monitor Serial output
+# 2. On first boot the device starts AP "FishHub-Setup"
+#    Connect to it from your phone or laptop, then open 192.168.4.1
+#    Fill in Wi-Fi credentials, server URL, and the provisioning code
+#    from the FishHub web app. The device reboots into normal operation.
+
+# 3. Monitor Serial output
 pio device monitor
 ```
+
+> For development without a provisioning code, copy `include/config.h.example` to `include/config.h`, fill in the credentials, and build. `config.h` values act as fallbacks when NVS is empty. See [configuration.md](configuration.md) for details.
 
 ## Tech stack
 
@@ -39,4 +39,7 @@ pio device monitor
 | JSON serialization | ArduinoJson v7 |
 | HTTP client | ESP32 built-in HTTPClient |
 | Wire format | SenML JSON (RFC 8428) |
-| Auth | Bearer token (hardcoded in `config.h`) |
+| Auth | Bearer token stored in NVS (provisioned via captive portal) |
+| Persistent storage | ESP32 NVS via Arduino `Preferences` |
+| Captive portal | Arduino `WebServer` (ESP32 built-in) |
+| Background tasks | FreeRTOS tasks (Wi-Fi scan during provisioning) |
