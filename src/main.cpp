@@ -17,15 +17,26 @@ static void logNvsKey(const char *key)
   Serial.printf("  NVS %-14s %s\n", key, val.isEmpty() ? "MISSING" : "present");
 }
 
-// Returns true if the given pin is held LOW for the entire durationMs window.
+// Returns true if the given pin is held LOW for durationMs continuous milliseconds.
+// Waits up to 500ms for the button to be pressed before starting the hold timer.
 static bool buttonHeldOnBoot(uint8_t pin, unsigned long durationMs)
 {
   pinMode(pin, INPUT_PULLUP);
-  if (digitalRead(pin) == HIGH)
-    return false; // not held at all
 
-  unsigned long start = millis();
-  while (millis() - start < durationMs)
+  // Wait up to 500ms for the button to be pressed
+  unsigned long waitStart = millis();
+  while (digitalRead(pin) == HIGH)
+  {
+    if (millis() - waitStart > 500)
+      return false; // button not pressed within window
+    delay(10);
+  }
+
+  Serial.println("Reconfiguration: button pressed — hold for 3 seconds to reconfigure");
+
+  // Button is now LOW — require it held for the full durationMs
+  unsigned long holdStart = millis();
+  while (millis() - holdStart < durationMs)
   {
     delay(50);
     if (digitalRead(pin) == HIGH)
@@ -34,7 +45,7 @@ static bool buttonHeldOnBoot(uint8_t pin, unsigned long durationMs)
       return false;
     }
   }
-  Serial.println("Reconfiguration: button hold detected");
+  Serial.println("Reconfiguration: hold detected");
   return true;
 }
 
