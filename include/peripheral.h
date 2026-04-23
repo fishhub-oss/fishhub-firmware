@@ -22,9 +22,9 @@ public:
   // Called when intervalMs() has elapsed. Returns true if there is a new reading/state.
   virtual bool tick(time_t now) = 0;
 
-  // Appends one or more SenML entries to the "e" array of the base record.
+  // Appends one or more SenML sibling records to the top-level records array.
   // Only called when tick() returned true.
-  virtual void appendSenML(JsonArray& entries, time_t now) = 0;
+  virtual void appendSenML(JsonArray& records, time_t now) = 0;
 
   // Entry point for inbound MQTT commands. Sensors may leave this as the default no-op.
   virtual void applyCommand(JsonObjectConst cmd) {}

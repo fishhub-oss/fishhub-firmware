@@ -21,9 +21,9 @@ bool DS18B20Sensor::tick(time_t /*now*/) {
   return true;
 }
 
-void DS18B20Sensor::appendSenML(JsonArray& entries, time_t /*now*/) {
-  JsonObject e = entries.add<JsonObject>();
-  e["n"] = "temperature";
-  e["u"] = "Cel";
-  e["v"] = _lastTemp;
+void DS18B20Sensor::appendSenML(JsonArray& records, time_t /*now*/) {
+  JsonObject r = records.add<JsonObject>();
+  r["n"] = "temperature";
+  r["u"] = "Cel";
+  r["v"] = _lastTemp;
 }

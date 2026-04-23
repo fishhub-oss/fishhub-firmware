@@ -19,10 +19,10 @@ public:
     return true;
   }
 
-  void appendSenML(JsonArray& entries, time_t /*now*/) override {
-    JsonObject e = entries.add<JsonObject>();
-    e["n"] = _name;
-    e["v"] = (float)tickCount;
+  void appendSenML(JsonArray& records, time_t /*now*/) override {
+    JsonObject r = records.add<JsonObject>();
+    r["n"] = _name;
+    r["v"] = (float)tickCount;
   }
 
   void applyCommand(JsonObjectConst cmd) override {
@@ -87,6 +87,30 @@ void test_two_peripherals_tick_independently(void) {
   TEST_ASSERT_EQUAL_INT(1, slow.tickCount);
 }
 
+void test_tickAll_produces_flat_senml(void) {
+  PeripheralManager mgr;
+  MockPeripheral p("temperature", 1000);
+  mgr.add(&p);
+  mgr.beginAll();
+
+  String out = mgr.tickAll(1745000000, 1000);
+  TEST_ASSERT_FALSE(out.empty());
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, out);
+  TEST_ASSERT_EQUAL_INT(DeserializationError::Ok, err.code());
+
+  JsonArray arr = doc.as<JsonArray>();
+  // First element must be base record with bn and bt
+  TEST_ASSERT_EQUAL_STRING("fishhub/device/", arr[0]["bn"].as<const char*>());
+  TEST_ASSERT_EQUAL_INT(1745000000, arr[0]["bt"].as<long>());
+  // Second element must be a measurement record (no bn/bt)
+  TEST_ASSERT_EQUAL_STRING("temperature", arr[1]["n"].as<const char*>());
+  TEST_ASSERT_TRUE(arr[1]["v"].is<float>());
+  // No "e" key anywhere
+  TEST_ASSERT_TRUE(arr[0]["e"].isNull());
+}
+
 void test_dispatch_command_routes_by_name(void) {
   PeripheralManager mgr;
   MockPeripheral a("relay", 1000);
@@ -113,6 +137,7 @@ int main(void) {
   RUN_TEST(test_not_ticked_before_interval);
   RUN_TEST(test_ticked_after_interval);
   RUN_TEST(test_two_peripherals_tick_independently);
+  RUN_TEST(test_tickAll_produces_flat_senml);
   RUN_TEST(test_dispatch_command_routes_by_name);
   return UNITY_END();
 }
