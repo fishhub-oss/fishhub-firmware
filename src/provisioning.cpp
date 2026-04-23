@@ -61,16 +61,19 @@ static const char TOGGLE_SCRIPT[] =
   "}"
   "</script>";
 
+// reconfiguring = device already has a token; omit provisioning code field
 static String buildForm(const String& errorMsg, const String& prefillSsid,
-                        const String& prefillUrl) {
+                        const String& prefillUrl, bool reconfiguring) {
   String html = "<!DOCTYPE html><html lang='en'><head>"
     "<meta charset='UTF-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
     "<title>FishHub Setup</title>";
   html += CSS;
   html += "</head><body><div class='card'>"
-    "<h1>FishHub</h1>"
-    "<p class='subtitle'>Connect your device</p>";
+    "<h1>FishHub</h1>";
+  html += reconfiguring
+    ? "<p class='subtitle'>Update your device settings</p>"
+    : "<p class='subtitle'>Connect your device</p>";
 
   if (errorMsg.length() > 0) {
     html += "<div class='error'>" + errorMsg + "</div>";
@@ -127,15 +130,19 @@ static String buildForm(const String& errorMsg, const String& prefillSsid,
     "placeholder='http://192.168.1.10:8080' required value='" + prefillUrl + "'>"
     "</div>";
 
-  // Provisioning code
-  html += "<div class='field'>"
-    "<label for='provision_code'>Provisioning Code</label>"
-    "<input id='provision_code' name='provision_code' class='code-input' "
-    "maxlength='6' required autocomplete='off'>"
-    "</div>";
+  // Provisioning code — only shown on fresh provisioning
+  if (!reconfiguring) {
+    html += "<div class='field'>"
+      "<label for='provision_code'>Provisioning Code</label>"
+      "<input id='provision_code' name='provision_code' class='code-input' "
+      "maxlength='6' required autocomplete='off'>"
+      "</div>";
+  }
 
-  html += "<button type='submit'>Connect</button>"
-    "</form></div>";
+  html += reconfiguring
+    ? "<button type='submit'>Save &amp; Reconnect</button>"
+    : "<button type='submit'>Connect</button>";
+  html += "</form></div>";
   html += TOGGLE_SCRIPT;
   html += "</body></html>";
   return html;
@@ -173,10 +180,11 @@ static String buildSuccess() {
 // ─── WebServer + handlers ─────────────────────────────────────────────────────
 
 static WebServer server(80);
-static bool pendingRestart = false;
+static bool      reconfiguring = false;
 
 static void handleRoot() {
-  server.send(200, "text/html", buildForm("", "", ""));
+  String prefillUrl = reconfiguring ? nvsStore.get("server_url") : "";
+  server.send(200, "text/html", buildForm("", "", prefillUrl, reconfiguring));
 }
 
 static void handleConfigure() {
@@ -185,24 +193,48 @@ static void handleConfigure() {
   if (ssid == "__other__") ssid = server.arg("wifi_ssid_manual");
   ssid.trim();
 
-  String password   = server.arg("wifi_password");
-  String serverUrl  = server.arg("server_url");
-  String code       = server.arg("provision_code");
+  String password  = server.arg("wifi_password");
+  String serverUrl = server.arg("server_url");
   serverUrl.trim();
+
+  if (reconfiguring) {
+    Serial.printf("Reconfigure: ssid=%s server_url=%s\n",
+                  ssid.c_str(), serverUrl.c_str());
+
+    if (ssid.isEmpty() || password.isEmpty() || serverUrl.isEmpty()) {
+      server.send(200, "text/html",
+        buildForm("All fields are required.", ssid, serverUrl, true));
+      return;
+    }
+
+    nvsStore.set("wifi_ssid",  ssid);
+    nvsStore.set("wifi_pass",  password);
+    nvsStore.set("server_url", serverUrl);
+
+    server.send(200, "text/html", buildConnecting());
+    server.client().flush();
+    delay(500);
+    Serial.println("Reconfiguration saved. Rebooting...");
+    ESP.restart();
+    return;
+  }
+
+  // Fresh provisioning path
+  String code = server.arg("provision_code");
   code.trim();
 
   Serial.printf("Configure: ssid=%s server_url=%s code=%s\n",
                 ssid.c_str(), serverUrl.c_str(), code.c_str());
 
   if (ssid.isEmpty() || password.isEmpty() || serverUrl.isEmpty() || code.isEmpty()) {
-    server.send(400, "text/html",
-      buildForm("All fields are required.", ssid, serverUrl));
+    server.send(200, "text/html",
+      buildForm("All fields are required.", ssid, serverUrl, false));
     return;
   }
 
-  nvsStore.set("wifi_ssid",   ssid);
-  nvsStore.set("wifi_pass",   password);
-  nvsStore.set("server_url",  serverUrl);
+  nvsStore.set("wifi_ssid",  ssid);
+  nvsStore.set("wifi_pass",  password);
+  nvsStore.set("server_url", serverUrl);
 
   // Send a "connecting" page immediately so the browser has a response
   // before we drop the AP to connect to the user's Wi-Fi network.
@@ -219,17 +251,17 @@ static void handleConfigure() {
     case ActivationError::WifiFailed:
       server.send(200, "text/html",
         buildForm("Could not connect to Wi-Fi. Check the network name and password.",
-                  ssid, serverUrl));
+                  ssid, serverUrl, false));
       break;
     case ActivationError::InvalidCode:
       server.send(200, "text/html",
         buildForm("Invalid provisioning code. Generate a new one in the app.",
-                  ssid, serverUrl));
+                  ssid, serverUrl, false));
       break;
     case ActivationError::ServerError:
       server.send(200, "text/html",
         buildForm("Could not reach the server. Check the Server URL.",
-                  ssid, serverUrl));
+                  ssid, serverUrl, false));
       break;
     default:
       break;
@@ -319,6 +351,10 @@ ActivationError activateDevice(const String& provisionCode) {
 }
 
 void startProvisioning() {
+  // Reconfiguring if the device already has a token — no provisioning code needed
+  reconfiguring = !nvsStore.get("device_token").isEmpty();
+  Serial.printf("Provisioning mode: %s\n", reconfiguring ? "reconfiguration" : "fresh");
+
   scanMutex = xSemaphoreCreateMutex();
   scannedSSIDs.clear();
   scanDone = false;
