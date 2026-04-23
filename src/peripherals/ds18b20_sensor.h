@@ -11,7 +11,7 @@ public:
   void     begin() override;
   uint32_t intervalMs() const override { return _intervalMs; }
   bool     tick(time_t now) override;
-  void     appendSenML(JsonArray& entries, time_t now) override;
+  void     appendSenML(JsonArray& records, time_t now) override;
   const char* name() const override { return "temperature"; }
 
 private:

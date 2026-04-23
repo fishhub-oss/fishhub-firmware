@@ -17,17 +17,13 @@ void PeripheralManager::beginAll() {
 String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
   JsonDocument doc;
   JsonArray records = doc.to<JsonArray>();
-  JsonObject base   = records.add<JsonObject>();
-  base["bn"] = "fishhub/device/";
-  base["bt"] = (long)now;
-  JsonArray entries = base["e"].to<JsonArray>();
 
   bool anyData = false;
   for (auto& e : _entries) {
     if (nowMs - e.lastTickedAt >= e.peripheral->intervalMs()) {
       e.lastTickedAt = nowMs;
       if (e.peripheral->tick(now)) {
-        e.peripheral->appendSenML(entries, now);
+        e.peripheral->appendSenML(records, now);
         anyData = true;
       }
     }
@@ -35,9 +31,19 @@ String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
 
   if (!anyData) return String{};
 
-  String out;
-  serializeJson(doc, out);
-  return out;
+  // Prepend base record now that we know there is data
+  JsonDocument out;
+  JsonArray result = out.to<JsonArray>();
+  JsonObject base  = result.add<JsonObject>();
+  base["bn"] = "fishhub/device/";
+  base["bt"] = (long)now;
+  for (JsonObject r : records) {
+    result.add(r);
+  }
+
+  String payload;
+  serializeJson(out, payload);
+  return payload;
 
 }
 
