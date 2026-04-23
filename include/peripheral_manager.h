@@ -31,6 +31,9 @@ public:
   // Routes an inbound MQTT command to the peripheral matching name().
   void dispatchCommand(const String& name, JsonObjectConst cmd);
 
+  // Returns the peripheral with the given name, or nullptr if not found.
+  Peripheral* find(const String& name);
+
 private:
   std::vector<PeripheralEntry> _entries;
 };

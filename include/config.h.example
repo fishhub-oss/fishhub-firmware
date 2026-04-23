@@ -3,8 +3,15 @@
 #define WIFI_SSID     "your-ssid"
 #define WIFI_PASSWORD "your-password"
 
-#define SERVER_URL   "http://192.168.x.x:8080"
-#define DEVICE_TOKEN "your-32-byte-hex-token"
+// Backend base URL (no trailing slash)
+#define SERVER_URL   "https://your-server.example.com"
 
-// How often the DS18B20 sensor is read, in milliseconds (default: 30000).
+// MQTT broker — format: mqtts://host:port
+#define MQTT_URL     "mqtts://your-broker.hivemq.cloud:8883"
+
+// Device credentials — populated automatically by provisioning; set manually for dev
+#define DEVICE_ID    ""
+#define DEVICE_TOKEN ""
+
+// Sensor polling intervals (milliseconds)
 #define DS18B20_INTERVAL_MS 30000

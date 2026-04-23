@@ -55,3 +55,10 @@ void PeripheralManager::dispatchCommand(const String& name, JsonObjectConst cmd)
     }
   }
 }
+
+Peripheral* PeripheralManager::find(const String& name) {
+  for (auto& e : _entries) {
+    if (name == e.peripheral->name()) return e.peripheral;
+  }
+  return nullptr;
+}

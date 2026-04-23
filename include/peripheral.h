@@ -29,6 +29,12 @@ public:
   // Entry point for inbound MQTT commands. Sensors may leave this as the default no-op.
   virtual void applyCommand(JsonObjectConst cmd) {}
 
+  // Returns true if retained/redelivered commands should always be re-applied (default).
+  // Idempotent peripherals (schedules, state) return true.
+  // One-shot peripherals (feeder, doser) override to false — the MQTT client will
+  // deduplicate by persisting the last processed command ID in NVS.
+  virtual bool replayCommand() const { return true; }
+
   // Unique name — used as MQTT topic segment and SenML field name prefix.
   virtual const char* name() const = 0;
 };
