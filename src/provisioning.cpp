@@ -351,8 +351,11 @@ ActivationError activateDevice(const String& provisionCode) {
 }
 
 void startProvisioning() {
-  // Reconfiguring if the device already has a token — no provisioning code needed
-  reconfiguring = !nvsStore.get("device_jwt").isEmpty();
+  // Reconfiguring if the device already has a JWT (or a legacy hex token) — no code needed.
+  // Devices provisioned before the JWT migration will have device_token; treat them as
+  // reconfiguring so they reach the captive portal and can re-activate with a new code.
+  reconfiguring = !nvsStore.get("device_jwt").isEmpty() ||
+                  !nvsStore.get("device_token").isEmpty();
   Serial.printf("Provisioning mode: %s\n", reconfiguring ? "reconfiguration" : "fresh");
 
   scanMutex = xSemaphoreCreateMutex();
