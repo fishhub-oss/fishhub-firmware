@@ -7,6 +7,10 @@
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
 
+#ifndef DS18B20_INTERVAL_MS
+#define DS18B20_INTERVAL_MS 30000
+#endif
+
 PeripheralManager manager;
 
 static void logNvsKey(const char* key) {
@@ -51,7 +55,7 @@ void setup() {
   connectWifi();
   waitForNtp();
 
-  manager.add(new DS18B20Sensor(ONE_WIRE_PIN));
+  manager.add(new DS18B20Sensor(ONE_WIRE_PIN, DS18B20_INTERVAL_MS));
   manager.beginAll();
 }
 

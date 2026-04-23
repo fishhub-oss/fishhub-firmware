@@ -5,3 +5,6 @@
 
 #define SERVER_URL   "http://192.168.x.x:8080"
 #define DEVICE_TOKEN "your-32-byte-hex-token"
+
+// How often the DS18B20 sensor is read, in milliseconds (default: 30000).
+#define DS18B20_INTERVAL_MS 30000
