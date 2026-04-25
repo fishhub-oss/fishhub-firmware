@@ -366,22 +366,38 @@ ActivationError activateDevice(const String &provisionCode)
   // Parse response: { device_id, token }
   JsonDocument doc;
   DeserializationError jsonErr = deserializeJson(doc, resp);
-  String token    = jsonErr ? String() : doc["token"].as<String>();
-  String deviceId = jsonErr ? String() : doc["device_id"].as<String>();
-  Serial.printf("Activation: token length=%d  device_id=%s\n",
-                token.length(), deviceId.isEmpty() ? "(missing)" : deviceId.c_str());
+  String token        = jsonErr ? String() : doc["token"].as<String>();
+  String deviceId     = jsonErr ? String() : doc["device_id"].as<String>();
+  String mqttUsername = jsonErr ? String() : doc["mqtt_username"].as<String>();
+  String mqttPassword = jsonErr ? String() : doc["mqtt_password"].as<String>();
+  String mqttHost     = jsonErr ? String() : doc["mqtt_host"].as<String>();
+  Serial.printf("Activation: token length=%d  device_id=%s  mqtt_username=%s\n",
+                token.length(),
+                deviceId.isEmpty() ? "(missing)" : deviceId.c_str(),
+                mqttUsername.isEmpty() ? "(missing)" : mqttUsername.c_str());
   if (token.isEmpty())
   {
     Serial.println("Activation: server returned empty token — DEVICE_JWT_PRIVATE_KEY not configured on server");
     restartAP();
     return ActivationError::ServerError;
   }
+  if (mqttUsername.isEmpty() || mqttPassword.isEmpty())
+  {
+    Serial.println("Activation: server returned no MQTT credentials — HIVEMQ_API_BASE_URL not configured on server");
+    restartAP();
+    return ActivationError::ServerError;
+  }
 
   nvsStore.set("device_jwt", token);
-  if (!deviceId.isEmpty()) nvsStore.set("device_id", deviceId);
-  Serial.printf("Activation: device_jwt stored=%s  device_id stored=%s\n",
-                nvsStore.get("device_jwt").isEmpty() ? "FAILED" : "OK",
-                nvsStore.get("device_id").isEmpty() ? "FAILED" : "OK");
+  if (!deviceId.isEmpty())     nvsStore.set("device_id",      deviceId);
+  if (!mqttUsername.isEmpty()) nvsStore.set("mqtt_username",  mqttUsername);
+  if (!mqttPassword.isEmpty()) nvsStore.set("mqtt_password",  mqttPassword);
+  if (!mqttHost.isEmpty())     nvsStore.set("mqtt_host",      mqttHost);
+  Serial.printf("Activation: device_jwt=%s  device_id=%s  mqtt_username=%s  mqtt_host=%s\n",
+                nvsStore.get("device_jwt").isEmpty()    ? "FAILED" : "OK",
+                nvsStore.get("device_id").isEmpty()     ? "FAILED" : "OK",
+                nvsStore.get("mqtt_username").isEmpty() ? "FAILED" : "OK",
+                nvsStore.get("mqtt_host").isEmpty()     ? "FAILED" : "OK");
   Serial.println("Activation successful. Rebooting...");
   delay(1000);
   ESP.restart();

@@ -14,10 +14,13 @@ private:
   void connect();
   void onMessage(char* topic, byte* payload, unsigned int len);
 
-  WiFiClientSecure  _tlsClient;
-  PubSubClient      _client;
+  WiFiClientSecure   _tlsClient;
+  PubSubClient       _client;
   PeripheralManager* _manager = nullptr;
-  String            _deviceId;
-  String            _deviceJwt;
-  unsigned long     _lastConnectAttempt = 0;
+  String             _deviceId;
+  String             _mqttUsername;
+  String             _mqttPassword;
+  String             _mqttHost;
+  uint16_t           _mqttPort = 8883;
+  unsigned long      _lastConnectAttempt = 0;
 };

@@ -6,12 +6,12 @@
 // Backend base URL (no trailing slash)
 #define SERVER_URL   "https://your-server.example.com"
 
-// MQTT broker — format: mqtts://host:port
-#define MQTT_URL     "mqtts://your-broker.hivemq.cloud:8883"
+// MQTT broker
+#define MQTT_HOST    "your-broker.hivemq.cloud"
+#define MQTT_PORT    8883
 
 // Device credentials — populated automatically by provisioning; set manually for dev
 #define DEVICE_ID    ""
-#define DEVICE_TOKEN ""
 
 // Sensor polling intervals (milliseconds)
 #define DS18B20_INTERVAL_MS 30000

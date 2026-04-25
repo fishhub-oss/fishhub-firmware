@@ -16,22 +16,14 @@
 PeripheralManager manager;
 FishHubMqttClient mqttClient;
 
-static void logNvsKey(const char* key) {
+static void logNvsKey(const char *key)
+{
   String val = nvsStore.get(key);
   Serial.printf("  NVS %-14s %s\n", key, val.isEmpty() ? "MISSING" : "present");
 }
 
-static bool buttonHeld(uint8_t pin, unsigned long durationMs) {
-  if (digitalRead(pin) == HIGH) return false;
-  unsigned long start = millis();
-  while (millis() - start < durationMs) {
-    delay(50);
-    if (digitalRead(pin) == HIGH) return false;
-  }
-  return true;
-}
-
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   Serial.println("FishHub firmware booting...");
 
@@ -46,13 +38,14 @@ void setup() {
   logNvsKey("device_jwt");
 
   bool provisioned =
-    !nvsStore.get("wifi_ssid").isEmpty() &&
-    !nvsStore.get("wifi_pass").isEmpty() &&
-    !nvsStore.get("server_url").isEmpty() &&
-    !nvsStore.get("device_id").isEmpty() &&
-    !nvsStore.get("device_jwt").isEmpty();
+      !nvsStore.get("wifi_ssid").isEmpty() &&
+      !nvsStore.get("wifi_pass").isEmpty() &&
+      !nvsStore.get("server_url").isEmpty() &&
+      !nvsStore.get("device_id").isEmpty() &&
+      !nvsStore.get("device_jwt").isEmpty();
 
-  if (!provisioned) {
+  if (!provisioned)
+  {
     Serial.println("One or more NVS keys missing — entering provisioning mode");
     startProvisioning(); // never returns — device reboots after activation
   }
@@ -67,17 +60,43 @@ void setup() {
   mqttClient.begin(manager);
 }
 
-void loop() {
-  if (buttonHeld(RESET_BUTTON_PIN, 3000)) {
-    Serial.println("Button held — entering reconfiguration mode...");
-    startProvisioning(); // never returns
+void loop()
+{
+  if (digitalRead(RESET_BUTTON_PIN) == LOW)
+  {
+    Serial.println("Reset button pressed");
+    Serial.println("- 3s  => enter provisioning mode");
+    Serial.println("- 10s => clear data");
+
+    unsigned long pressStart = millis();
+    while (digitalRead(RESET_BUTTON_PIN) == LOW)
+    {
+      unsigned long heldUntilNow = millis() - pressStart;
+      Serial.printf("Held for %d ms\n", heldUntilNow);
+      delay(50);
+    }
+
+    unsigned long held = millis() - pressStart;
+
+    if (held >= 10000)
+    {
+      Serial.println("Button held 10s — clearing NVS and rebooting...");
+      nvsStore.clear();
+      ESP.restart();
+    }
+    else if (held >= 3000)
+    {
+      Serial.println("Button held 3s — entering reconfiguration mode...");
+      startProvisioning(); // never returns
+    }
   }
 
   mqttClient.loop();
 
   time_t now = time(nullptr);
   String payload = manager.tickAll(now, millis());
-  if (!payload.isEmpty()) {
+  if (!payload.isEmpty())
+  {
     postReading(payload);
   }
 }
