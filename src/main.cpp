@@ -4,14 +4,17 @@
 #include "provisioning.h"
 #include "wifi_ntp.h"
 #include "http_client.h"
+#include "mqtt_client.h"
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
+#include "peripherals/relay_actuator.h"
 
 #ifndef DS18B20_INTERVAL_MS
 #define DS18B20_INTERVAL_MS 30000
 #endif
 
 PeripheralManager manager;
+FishHubMqttClient mqttClient;
 
 static void logNvsKey(const char* key) {
   String val = nvsStore.get(key);
@@ -39,12 +42,14 @@ void setup() {
   logNvsKey("wifi_ssid");
   logNvsKey("wifi_pass");
   logNvsKey("server_url");
+  logNvsKey("device_id");
   logNvsKey("device_jwt");
 
   bool provisioned =
     !nvsStore.get("wifi_ssid").isEmpty() &&
     !nvsStore.get("wifi_pass").isEmpty() &&
     !nvsStore.get("server_url").isEmpty() &&
+    !nvsStore.get("device_id").isEmpty() &&
     !nvsStore.get("device_jwt").isEmpty();
 
   if (!provisioned) {
@@ -56,7 +61,10 @@ void setup() {
   waitForNtp();
 
   manager.add(new DS18B20Sensor(ONE_WIRE_PIN, DS18B20_INTERVAL_MS));
+  manager.add(new RelayActuator("light", RELAY_LIGHT_PIN));
   manager.beginAll();
+
+  mqttClient.begin(manager);
 }
 
 void loop() {
@@ -64,6 +72,8 @@ void loop() {
     Serial.println("Button held — entering reconfiguration mode...");
     startProvisioning(); // never returns
   }
+
+  mqttClient.loop();
 
   time_t now = time(nullptr);
   String payload = manager.tickAll(now, millis());

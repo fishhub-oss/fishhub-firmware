@@ -1,7 +1,10 @@
 #include <unity.h>
 #include <ArduinoJson.h>
+#include <cstdlib>
 #include "peripheral_manager.h"
+#include "schedule.h"
 #include "../../src/peripheral_manager.cpp"
+#include "../../src/schedule.cpp"
 
 // ── mock peripheral ──────────────────────────────────────────────────────────
 
@@ -127,17 +130,98 @@ void test_dispatch_command_routes_by_name(void) {
   TEST_ASSERT_EQUAL_STRING("", b.lastCmd.c_str());
 }
 
+// ── Schedule tests ───────────────────────────────────────────────────────────
+
+// All schedule tests run with TZ=UTC so localtime_r matches the UTC timestamps.
+// 2024-01-10 10:00:00 UTC
+static const time_t T_10_00 = 1704880800;
+// 2024-01-10 23:00:00 UTC
+static const time_t T_23_00 = 1704924000;
+// 2024-01-10 03:00:00 UTC
+static const time_t T_03_00 = 1704848400;
+
+static Schedule makeSchedule(const char* json) {
+  JsonDocument doc;
+  deserializeJson(doc, json);
+  Schedule s;
+  s.loadWindows(doc.as<JsonArrayConst>());
+  return s;
+}
+
+void test_schedule_no_windows_inactive() {
+  Schedule s;
+  TEST_ASSERT_FALSE(s.isActive(T_10_00));
+}
+
+void test_schedule_normal_window_inside() {
+  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
+  TEST_ASSERT_TRUE(s.isActive(T_10_00));
+}
+
+void test_schedule_normal_window_outside() {
+  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
+  TEST_ASSERT_FALSE(s.isActive(T_23_00));
+}
+
+void test_schedule_overnight_after_on() {
+  Schedule s = makeSchedule("[[\"22:00\",\"06:00\"]]");
+  TEST_ASSERT_TRUE(s.isActive(T_23_00));
+}
+
+void test_schedule_overnight_before_off() {
+  Schedule s = makeSchedule("[[\"22:00\",\"06:00\"]]");
+  TEST_ASSERT_TRUE(s.isActive(T_03_00));
+}
+
+void test_schedule_overnight_outside() {
+  Schedule s = makeSchedule("[[\"22:00\",\"06:00\"]]");
+  TEST_ASSERT_FALSE(s.isActive(T_10_00));
+}
+
+void test_schedule_override_true() {
+  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
+  s.setOverride(true);
+  TEST_ASSERT_TRUE(s.isActive(T_23_00));
+}
+
+void test_schedule_override_false() {
+  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
+  s.setOverride(false);
+  TEST_ASSERT_FALSE(s.isActive(T_10_00));
+}
+
+void test_schedule_load_clears_override() {
+  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
+  s.setOverride(false);
+  JsonDocument empty;
+  s.loadWindows(empty.as<JsonArrayConst>());
+  TEST_ASSERT_FALSE(s.hasOverride());
+}
+
 // ── entry point ──────────────────────────────────────────────────────────────
 
 void setUp(void) {}
 void tearDown(void) {}
 
 int main(void) {
+  // Schedule tests use timestamps in UTC; force localtime_r to match.
+  setenv("TZ", "UTC0", 1);
+  tzset();
+
   UNITY_BEGIN();
   RUN_TEST(test_not_ticked_before_interval);
   RUN_TEST(test_ticked_after_interval);
   RUN_TEST(test_two_peripherals_tick_independently);
   RUN_TEST(test_tickAll_produces_flat_senml);
   RUN_TEST(test_dispatch_command_routes_by_name);
+  RUN_TEST(test_schedule_no_windows_inactive);
+  RUN_TEST(test_schedule_normal_window_inside);
+  RUN_TEST(test_schedule_normal_window_outside);
+  RUN_TEST(test_schedule_overnight_after_on);
+  RUN_TEST(test_schedule_overnight_before_off);
+  RUN_TEST(test_schedule_overnight_outside);
+  RUN_TEST(test_schedule_override_true);
+  RUN_TEST(test_schedule_override_false);
+  RUN_TEST(test_schedule_load_clears_override);
   return UNITY_END();
 }

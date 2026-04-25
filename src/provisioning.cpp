@@ -363,11 +363,13 @@ ActivationError activateDevice(const String &provisionCode)
     return ActivationError::ServerError;
   }
 
-  // Parse token from response
+  // Parse response: { device_id, token }
   JsonDocument doc;
   DeserializationError jsonErr = deserializeJson(doc, resp);
-  String token = jsonErr ? String() : doc["token"].as<String>();
-  Serial.printf("Activation: token length=%d\n", token.length());
+  String token    = jsonErr ? String() : doc["token"].as<String>();
+  String deviceId = jsonErr ? String() : doc["device_id"].as<String>();
+  Serial.printf("Activation: token length=%d  device_id=%s\n",
+                token.length(), deviceId.isEmpty() ? "(missing)" : deviceId.c_str());
   if (token.isEmpty())
   {
     Serial.println("Activation: server returned empty token — DEVICE_JWT_PRIVATE_KEY not configured on server");
@@ -376,8 +378,10 @@ ActivationError activateDevice(const String &provisionCode)
   }
 
   nvsStore.set("device_jwt", token);
-  Serial.printf("Activation: device_jwt stored=%s\n",
-                nvsStore.get("device_jwt").isEmpty() ? "FAILED" : "OK");
+  if (!deviceId.isEmpty()) nvsStore.set("device_id", deviceId);
+  Serial.printf("Activation: device_jwt stored=%s  device_id stored=%s\n",
+                nvsStore.get("device_jwt").isEmpty() ? "FAILED" : "OK",
+                nvsStore.get("device_id").isEmpty() ? "FAILED" : "OK");
   Serial.println("Activation successful. Rebooting...");
   delay(1000);
   ESP.restart();
