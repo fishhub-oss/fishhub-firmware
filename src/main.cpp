@@ -64,9 +64,18 @@ void loop()
 {
   if (digitalRead(RESET_BUTTON_PIN) == LOW)
   {
+    Serial.println("Reset button pressed");
+    Serial.println("- 3s  => enter provisioning mode");
+    Serial.println("- 10s => clear data");
+
     unsigned long pressStart = millis();
     while (digitalRead(RESET_BUTTON_PIN) == LOW)
+    {
+      unsigned long heldUntilNow = millis() - pressStart;
+      Serial.printf("Held for %d ms\n", heldUntilNow);
       delay(50);
+    }
+
     unsigned long held = millis() - pressStart;
 
     if (held >= 10000)
