@@ -34,7 +34,7 @@ Static helper `buttonHeld(pin, durationMs)` polls the pin every 50 ms and return
 ### `nvs_store.h` / `nvs_store.cpp`
 `NVSStore` wraps the Arduino `Preferences` library to provide named key-value storage backed by ESP32 NVS flash. A global `nvsStore` instance is defined in `nvs_store.cpp` and shared across all modules.
 
-Stored keys: `wifi_ssid`, `wifi_pass`, `server_url`, `device_token`.
+Stored keys: `wifi_ssid`, `wifi_pass`, `device_id`, `device_jwt`, `mqtt_username`, `mqtt_password`, `mqtt_host`.
 
 ### `provisioning.h` / `provisioning.cpp`
 Captive-portal provisioning and device activation.
@@ -42,10 +42,10 @@ Captive-portal provisioning and device activation.
 - `startProvisioning()` — starts a Wi-Fi AP (`"FishHub-Setup"`, mode `WIFI_AP_STA`) at `192.168.4.1`, serves an HTML form, and never returns. A FreeRTOS task on core 0 scans nearby networks (mutex-protected) to populate the SSID dropdown.
 
   Two modes are detected automatically at form-submit time:
-  - **Fresh provisioning** (`device_token` absent in NVS): saves credentials, calls `activateDevice()`, reboots on success, shows an error page on failure.
-  - **Reconfiguration** (`device_token` present in NVS): saves Wi-Fi credentials and server URL, reboots immediately — no server call, existing token is preserved.
+  - **Fresh provisioning** (`device_jwt` absent in NVS): saves Wi-Fi credentials, calls `activateDevice()`, reboots on success, shows an error page on failure.
+  - **Reconfiguration** (`device_jwt` present in NVS): saves Wi-Fi credentials only, reboots immediately — no server call, existing token and MQTT credentials are preserved.
 
-- `activateDevice(const String& provisionCode)` — connects to Wi-Fi, POSTs `{"code":"..."}` to `{server_url}/devices/activate`, parses the Bearer token from the response, stores it in NVS, and reboots.
+- `activateDevice(const String& provisionCode)` — connects to Wi-Fi, POSTs `{"code":"..."}` to `SERVER_URL/devices/activate` (from `config.h`), parses the JWT and MQTT credentials from the response, stores them in NVS, and reboots.
 
 - `enum class ActivationError { None, WifiFailed, InvalidCode, ServerError }` — result type returned by `activateDevice()`.
 
@@ -57,7 +57,7 @@ Captive-portal provisioning and device activation.
 - `buildSenMLPayload(float tempCelsius, time_t timestamp)` — serialises a single SenML record with ArduinoJson. Returns an Arduino `String`. See [wire-format.md](wire-format.md) for the schema.
 
 ### `http_client.h` / `http_client.cpp`
-- `postReading(const String& payload)` — reads `server_url` and `device_token` from NVS (falls back to `config.h`). Appends `"/readings"` to the server URL and normalises `http://` to `https://` for non-local IPs. POSTs the payload with `Authorization: Bearer <token>`. On a 5xx or network error, retries once after 1 s.
+- `postReading(const String& payload)` — uses `SERVER_URL` from `config.h` and reads `device_jwt` from NVS. Appends `"/readings"` to the server URL and normalises `http://` to `https://` for non-local IPs. POSTs the payload with `Authorization: Bearer <token>`. On a 5xx or network error, retries once after 1 s.
 
 ### `include/pins.h`
 - `ONE_WIRE_PIN 4` — GPIO pin for the DS18B20 OneWire data line.
@@ -70,7 +70,7 @@ setup()
   ├── Serial.begin(115200)
   ├── nvsStore.begin()
   ├── pinMode(RESET_BUTTON_PIN, INPUT_PULLUP)
-  ├── [check NVS for wifi_ssid, wifi_pass, server_url, device_token]
+  ├── [check NVS for wifi_ssid, wifi_pass, device_id, device_jwt]
   │     └── any missing → startProvisioning()  ← never returns
   ├── connectWifi()        — blocks until connected or halts
   ├── waitForNtp()         — blocks until UTC time is synced or halts

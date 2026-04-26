@@ -33,14 +33,12 @@ void setup()
   Serial.println("NVS key status:");
   logNvsKey("wifi_ssid");
   logNvsKey("wifi_pass");
-  logNvsKey("server_url");
   logNvsKey("device_id");
   logNvsKey("device_jwt");
 
   bool provisioned =
       !nvsStore.get("wifi_ssid").isEmpty() &&
       !nvsStore.get("wifi_pass").isEmpty() &&
-      !nvsStore.get("server_url").isEmpty() &&
       !nvsStore.get("device_id").isEmpty() &&
       !nvsStore.get("device_jwt").isEmpty();
 
