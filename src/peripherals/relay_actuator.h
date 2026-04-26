@@ -4,6 +4,10 @@
 #include "peripheral.h"
 #include "schedule.h"
 
+#ifndef ACTUATOR_HEARTBEAT_S
+#define ACTUATOR_HEARTBEAT_S 300
+#endif
+
 class RelayActuator : public Peripheral {
 public:
   RelayActuator(const char* name, uint8_t pin);
@@ -23,4 +27,5 @@ private:
   uint8_t     _pin;
   Schedule    _schedule;
   bool        _currentState = false;
+  time_t      _lastSentAt   = 0;
 };
