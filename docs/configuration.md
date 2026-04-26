@@ -20,19 +20,18 @@ Device credentials are stored in ESP32 NVS (non-volatile storage) and written vi
 4. Open `http://192.168.4.1` in a browser. The captive portal form shows:
    - **Wi-Fi network** — dropdown populated from a background scan, with a manual entry fallback
    - **Password** — Wi-Fi password (show/hide toggle)
-   - **Server URL** — base URL of the FishHub backend (e.g. `http://192.168.1.10:8080`)
-   - **Provisioning code** — one-time code from the web app (only shown on fresh provisioning)
+   - **Provisioning code** — one-time code from the web app
 5. Submit the form. The device:
    1. Connects to the specified Wi-Fi network.
-   2. POSTs `{"code":"<provisioning-code>"}` to `{server_url}/devices/activate`.
-   3. Parses the Bearer token from the response and stores all credentials in NVS.
+   2. POSTs `{"code":"<provisioning-code>"}` to `SERVER_URL/devices/activate` (the URL compiled into the firmware from `config.h`).
+   3. Parses the JWT and MQTT credentials from the response and stores them in NVS.
    4. Reboots into normal operation.
 
 If activation fails (wrong code, Wi-Fi unreachable, server error) the portal displays an error page. The device can be retried without reflashing.
 
-### Reconfiguration (update Wi-Fi or server URL)
+### Reconfiguration (update Wi-Fi credentials)
 
-Hold the **BOOT button** (GPIO 0) for **3 seconds** while the device is running. The device starts the AP in reconfiguration mode — the form appears without the provisioning code field. Submitting saves the new Wi-Fi credentials and server URL to NVS and reboots. The existing `device_token` is preserved; no server call is made.
+Hold the **BOOT button** (GPIO 0) for **3 seconds** while the device is running. The device starts the AP in reconfiguration mode — the form shows only the Wi-Fi fields (no provisioning code). Submitting saves the new Wi-Fi credentials to NVS and reboots. The existing `device_jwt` and MQTT credentials are preserved; no server call is made.
 
 ---
 
@@ -60,10 +59,12 @@ Then fill in the defines:
 |---|---|
 | `WIFI_SSID` | SSID of the Wi-Fi network the ESP32 will join |
 | `WIFI_PASSWORD` | Wi-Fi password |
-| `SERVER_URL` | Base URL of the FishHub backend. Use the local IP of the machine running the server — `localhost` won't resolve on device. `"/readings"` is appended automatically by `http_client`. |
-| `DEVICE_TOKEN` | 64-char hex Bearer token issued by the server |
+| `SERVER_URL` | Base URL of the FishHub backend (required at compile time — never entered at provisioning). Use the local IP of the machine running the server — `localhost` won't resolve on device. `"/readings"` is appended automatically by `http_client`. |
+| `MQTT_HOST` | HiveMQ broker hostname (used as fallback if NVS is empty) |
+| `MQTT_PORT` | HiveMQ broker port (default `8883`) |
+| `DEVICE_ID` | Device ID — leave empty; populated automatically by provisioning |
 
-`config.h` values are only read when the corresponding NVS key is empty. On a provisioned device the NVS values take precedence and `config.h` is ignored entirely.
+`SERVER_URL` is always read from `config.h` at compile time — it is never stored in NVS. `WIFI_SSID` and `WIFI_PASSWORD` are fallbacks used when NVS is empty; on a provisioned device the NVS values take precedence.
 
 ## `include/pins.h`
 

@@ -40,7 +40,6 @@ void setup()
   bool provisioned =
       !nvsStore.get("wifi_ssid").isEmpty() &&
       !nvsStore.get("wifi_pass").isEmpty() &&
-      !nvsStore.get("server_url").isEmpty() &&
       !nvsStore.get("device_id").isEmpty() &&
       !nvsStore.get("device_jwt").isEmpty();
 

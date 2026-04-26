@@ -3,7 +3,7 @@
 #define WIFI_SSID     "your-ssid"
 #define WIFI_PASSWORD "your-password"
 
-// Backend base URL (no trailing slash)
+// Backend base URL (no trailing slash) — set at compile time, not entered at provisioning
 #define SERVER_URL   "https://your-server.example.com"
 
 // MQTT broker

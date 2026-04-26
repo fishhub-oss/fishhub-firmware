@@ -1,5 +1,6 @@
 #include "provisioning.h"
 #include "nvs_store.h"
+#include "config.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
@@ -65,7 +66,7 @@ static const char TOGGLE_SCRIPT[] =
 
 // reconfiguring = device already has a token; omit provisioning code field
 static String buildForm(const String &errorMsg, const String &prefillSsid,
-                        const String &prefillUrl, bool reconfiguring)
+                        bool reconfiguring)
 {
   String html = "<!DOCTYPE html><html lang='en'><head>"
                 "<meta charset='UTF-8'>"
@@ -133,14 +134,6 @@ static String buildForm(const String &errorMsg, const String &prefillSsid,
           "</div>"
           "</div>";
 
-  // Server URL
-  html += "<div class='field'>"
-          "<label for='server_url'>Server URL</label>"
-          "<input id='server_url' name='server_url' autocapitalize='none' autocorrect='off' "
-          "placeholder='http://192.168.1.10:8080' required value='" +
-          prefillUrl + "'>"
-                       "</div>";
-
   // Provisioning code — only shown on fresh provisioning
   if (!reconfiguring)
   {
@@ -198,8 +191,7 @@ static bool reconfiguring = false;
 
 static void handleRoot()
 {
-  String prefillUrl = reconfiguring ? nvsStore.get("server_url") : "";
-  server.send(200, "text/html", buildForm("", "", prefillUrl, reconfiguring));
+  server.send(200, "text/html", buildForm("", "", reconfiguring));
 }
 
 static void handleConfigure()
@@ -211,24 +203,20 @@ static void handleConfigure()
   ssid.trim();
 
   String password = server.arg("wifi_password");
-  String serverUrl = server.arg("server_url");
-  serverUrl.trim();
 
   if (reconfiguring)
   {
-    Serial.printf("Reconfigure: ssid=%s server_url=%s\n",
-                  ssid.c_str(), serverUrl.c_str());
+    Serial.printf("Reconfigure: ssid=%s\n", ssid.c_str());
 
-    if (ssid.isEmpty() || password.isEmpty() || serverUrl.isEmpty())
+    if (ssid.isEmpty() || password.isEmpty())
     {
       server.send(200, "text/html",
-                  buildForm("All fields are required.", ssid, serverUrl, true));
+                  buildForm("All fields are required.", ssid, true));
       return;
     }
 
     nvsStore.set("wifi_ssid", ssid);
     nvsStore.set("wifi_pass", password);
-    nvsStore.set("server_url", serverUrl);
 
     server.send(200, "text/html", buildConnecting());
     server.client().flush();
@@ -242,19 +230,17 @@ static void handleConfigure()
   String code = server.arg("provision_code");
   code.trim();
 
-  Serial.printf("Configure: ssid=%s server_url=%s code=%s\n",
-                ssid.c_str(), serverUrl.c_str(), code.c_str());
+  Serial.printf("Configure: ssid=%s code=%s\n", ssid.c_str(), code.c_str());
 
-  if (ssid.isEmpty() || password.isEmpty() || serverUrl.isEmpty() || code.isEmpty())
+  if (ssid.isEmpty() || password.isEmpty() || code.isEmpty())
   {
     server.send(200, "text/html",
-                buildForm("All fields are required.", ssid, serverUrl, false));
+                buildForm("All fields are required.", ssid, false));
     return;
   }
 
   nvsStore.set("wifi_ssid", ssid);
   nvsStore.set("wifi_pass", password);
-  nvsStore.set("server_url", serverUrl);
 
   // Send a "connecting" page immediately so the browser has a response
   // before we drop the AP to connect to the user's Wi-Fi network.
@@ -272,17 +258,17 @@ static void handleConfigure()
   case ActivationError::WifiFailed:
     server.send(200, "text/html",
                 buildForm("Could not connect to Wi-Fi. Check the network name and password.",
-                          ssid, serverUrl, false));
+                          ssid, false));
     break;
   case ActivationError::InvalidCode:
     server.send(200, "text/html",
                 buildForm("Invalid provisioning code. Generate a new one in the app.",
-                          ssid, serverUrl, false));
+                          ssid, false));
     break;
   case ActivationError::ServerError:
     server.send(200, "text/html",
-                buildForm("Could not reach the server. Check the Server URL.",
-                          ssid, serverUrl, false));
+                buildForm("Could not reach the server. Check the server configuration.",
+                          ssid, false));
     break;
   default:
     break;
@@ -301,7 +287,7 @@ ActivationError activateDevice(const String &provisionCode)
 {
   String ssid = nvsStore.get("wifi_ssid");
   String password = nvsStore.get("wifi_pass");
-  String serverUrl = nvsStore.get("server_url");
+  String serverUrl = SERVER_URL;
   // Normalize to HTTPS — Railway and most hosted servers require it
   if (serverUrl.startsWith("http://") && !serverUrl.startsWith("http://192.") &&
       !serverUrl.startsWith("http://10.") && !serverUrl.startsWith("http://172."))
