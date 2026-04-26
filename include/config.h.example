@@ -15,3 +15,7 @@
 
 // Sensor polling intervals (milliseconds)
 #define DS18B20_INTERVAL_MS 30000
+
+// How often actuator state is written to InfluxDB even when unchanged (seconds).
+// Default is 300 (5 min). Override here to change it.
+// #define ACTUATOR_HEARTBEAT_S 300

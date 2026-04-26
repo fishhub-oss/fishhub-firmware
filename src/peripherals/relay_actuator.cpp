@@ -13,13 +13,18 @@ void RelayActuator::begin() {
 
 bool RelayActuator::tick(time_t now) {
   bool desired = _schedule.isActive(now);
-  if (desired != _currentState) {
+  bool changed = desired != _currentState;
+  if (changed) {
     // Active-low: LOW energizes the relay (on), HIGH de-energizes (off)
     digitalWrite(_pin, desired ? LOW : HIGH);
     _currentState = desired;
     Serial.printf("Relay %s: %s\n", _name, desired ? "ON" : "OFF");
   }
-  return true;
+  if (changed || now - _lastSentAt >= ACTUATOR_HEARTBEAT_S) {
+    _lastSentAt = now;
+    return true;
+  }
+  return false;
 }
 
 void RelayActuator::appendSenML(JsonArray& records, time_t /*now*/) {
