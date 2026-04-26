@@ -33,7 +33,6 @@ void setup()
   Serial.println("NVS key status:");
   logNvsKey("wifi_ssid");
   logNvsKey("wifi_pass");
-  logNvsKey("server_url");
   logNvsKey("device_id");
   logNvsKey("device_jwt");
 
