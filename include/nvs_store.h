@@ -9,6 +9,7 @@ public:
   void   set(const char* key, const String& value);
   void   remove(const char* key);
   void   clear();
+  bool   isProvisioned();
 
 private:
   Preferences _prefs;

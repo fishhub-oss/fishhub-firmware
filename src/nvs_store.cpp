@@ -21,3 +21,23 @@ void NVSStore::remove(const char* key) {
 void NVSStore::clear() {
   _prefs.clear();
 }
+
+bool NVSStore::isProvisioned() {
+  bool allKeys = get("wifi_ssid")     != "" &&
+                 get("wifi_pass")     != "" &&
+                 get("device_id")     != "" &&
+                 get("device_jwt")    != "" &&
+                 get("mqtt_username") != "" &&
+                 get("mqtt_password") != "" &&
+                 get("mqtt_host")     != "";
+
+  if (!allKeys)
+    return false;
+
+  // Migrate devices provisioned before the flag was introduced.
+  if (get("provisioned") != "1") {
+    set("provisioned", "1");
+    Serial.println("NVS: migrated — set provisioned flag on existing device");
+  }
+  return true;
+}
