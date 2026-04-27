@@ -7,8 +7,7 @@ ESP32 Arduino firmware for FishHub aquarium monitoring. On first boot (or after 
 | Document | What it covers |
 |---|---|
 | [architecture.md](architecture.md) | Source layout, module responsibilities, boot flow |
-| [configuration.md](configuration.md) | `config.h` defines, provisioning flow, NVS keys, button actions |
-| [peripherals.md](peripherals.md) | `Peripheral` interface contract, DS18B20 and RelayActuator, adding new peripherals |
+| [configuration.md](configuration.md) | `config.h` required defines, device provisioning |
 | [wire-format.md](wire-format.md) | SenML JSON structure, example payload, field semantics |
 | [development.md](development.md) | Build, flash, Serial monitor, unit tests |
 
@@ -40,8 +39,7 @@ pio device monitor
 | JSON serialization | ArduinoJson v7 |
 | HTTP client | ESP32 built-in HTTPClient |
 | Wire format | SenML JSON (RFC 8428) |
-| HTTP auth | RS256 device JWT stored in NVS as Bearer token, issued at activation |
-| MQTT auth | Username + password stored in NVS, provisioned asynchronously by HiveMQ after activation |
+| Auth | Bearer token stored in NVS (provisioned via captive portal) |
 | Persistent storage | ESP32 NVS via Arduino `Preferences` |
 | Captive portal | Arduino `WebServer` (ESP32 built-in) |
 | Background tasks | FreeRTOS tasks (Wi-Fi scan during provisioning) |
