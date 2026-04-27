@@ -164,22 +164,7 @@ static String buildConnecting()
           "<h1>FishHub</h1>"
           "<p class='subtitle'>Connecting to Wi-Fi and activating your device&hellip;</p>"
           "<p class='hint' style='text-align:center;margin-top:1rem'>"
-          "This may take up to 15 seconds. The device will reboot when done.</p>"
-          "</div></body></html>";
-  return html;
-}
-
-static String buildSuccess()
-{
-  String html = "<!DOCTYPE html><html lang='en'><head>"
-                "<meta charset='UTF-8'>"
-                "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
-                "<title>FishHub Setup</title>";
-  html += CSS;
-  html += "</head><body><div class='card'>"
-          "<h1>FishHub</h1>"
-          "<p class='subtitle' style='margin-bottom:0'>"
-          "Device connected. You can close this page.</p>"
+          "This may take up to 30 seconds. The device will reboot when done.</p>"
           "</div></body></html>";
   return html;
 }
@@ -188,94 +173,8 @@ static String buildSuccess()
 
 static WebServer server(80);
 static bool reconfiguring = false;
-
-static void handleRoot()
-{
-  server.send(200, "text/html", buildForm("", "", reconfiguring));
-}
-
-static void handleConfigure()
-{
-  // Resolve SSID from select or manual input
-  String ssid = server.arg("wifi_ssid");
-  if (ssid == "__other__")
-    ssid = server.arg("wifi_ssid_manual");
-  ssid.trim();
-
-  String password = server.arg("wifi_password");
-
-  if (reconfiguring)
-  {
-    Serial.printf("Reconfigure: ssid=%s\n", ssid.c_str());
-
-    if (ssid.isEmpty() || password.isEmpty())
-    {
-      server.send(200, "text/html",
-                  buildForm("All fields are required.", ssid, true));
-      return;
-    }
-
-    nvsStore.set("wifi_ssid", ssid);
-    nvsStore.set("wifi_pass", password);
-
-    server.send(200, "text/html", buildConnecting());
-    server.client().flush();
-    delay(500);
-    Serial.println("Reconfiguration saved. Rebooting...");
-    ESP.restart();
-    return;
-  }
-
-  // Fresh provisioning path
-  String code = server.arg("provision_code");
-  code.trim();
-
-  Serial.printf("Configure: ssid=%s code=%s\n", ssid.c_str(), code.c_str());
-
-  if (ssid.isEmpty() || password.isEmpty() || code.isEmpty())
-  {
-    server.send(200, "text/html",
-                buildForm("All fields are required.", ssid, false));
-    return;
-  }
-
-  nvsStore.set("wifi_ssid", ssid);
-  nvsStore.set("wifi_pass", password);
-
-  // Send a "connecting" page immediately so the browser has a response
-  // before we drop the AP to connect to the user's Wi-Fi network.
-  server.send(200, "text/html", buildConnecting());
-  server.client().flush();
-  delay(500);
-
-  ActivationError err = activateDevice(code);
-
-  // activateDevice reboots on success — only error paths reach here.
-  // The AP is restarted inside activateDevice() before returning,
-  // so we can serve the error page normally.
-  switch (err)
-  {
-  case ActivationError::WifiFailed:
-    server.send(200, "text/html",
-                buildForm("Could not connect to Wi-Fi. Check the network name and password.",
-                          ssid, false));
-    break;
-  case ActivationError::InvalidCode:
-    server.send(200, "text/html",
-                buildForm("Invalid provisioning code. Generate a new one in the app.",
-                          ssid, false));
-    break;
-  case ActivationError::ServerError:
-    server.send(200, "text/html",
-                buildForm("Could not reach the server. Check the server configuration.",
-                          ssid, false));
-    break;
-  default:
-    break;
-  }
-}
-
-// ─── activation (#19) ────────────────────────────────────────────────────────
+// Pending error message to show after AP restart on reconfigure failure
+static String pendingError;
 
 static void restartAP()
 {
@@ -283,36 +182,17 @@ static void restartAP()
   WiFi.softAP("FishHub-Setup");
 }
 
-ActivationError activateDevice(const String &provisionCode)
+// ─── activation helpers ───────────────────────────────────────────────────────
+
+struct ActivateResult {
+  ActivationError err;
+  String token;
+  String deviceId;
+};
+
+// POST /devices/activate — returns token + device_id on 202, error otherwise.
+static ActivateResult postActivate(const String &provisionCode, const String &serverUrl)
 {
-  String ssid = nvsStore.get("wifi_ssid");
-  String password = nvsStore.get("wifi_pass");
-  String serverUrl = SERVER_URL;
-  // Normalize to HTTPS — Railway and most hosted servers require it
-  if (serverUrl.startsWith("http://") && !serverUrl.startsWith("http://192.") &&
-      !serverUrl.startsWith("http://10.") && !serverUrl.startsWith("http://172."))
-  {
-    serverUrl.replace("http://", "https://");
-  }
-
-  Serial.printf("Activation: connecting to Wi-Fi SSID=%s\n", ssid.c_str());
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid.c_str(), password.c_str());
-
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
-  {
-    delay(200);
-  }
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    Serial.println("Activation: Wi-Fi connect timed out");
-    restartAP();
-    return ActivationError::WifiFailed;
-  }
-  Serial.printf("Activation: Wi-Fi connected — IP: %s\n",
-                WiFi.localIP().toString().c_str());
-
   String endpoint = serverUrl + "/devices/activate";
   String body = "{\"code\":\"" + provisionCode + "\"}";
 
@@ -330,7 +210,6 @@ ActivationError activateDevice(const String &provisionCode)
 
   int status = 0;
   String resp = doPost(status);
-
   if (status <= 0 || status >= 500)
   {
     Serial.println("Activation: server error, retrying once...");
@@ -339,62 +218,252 @@ ActivationError activateDevice(const String &provisionCode)
   }
 
   if (status >= 400 && status < 500)
-  {
-    restartAP();
-    return ActivationError::InvalidCode;
-  }
+    return {ActivationError::InvalidCode, "", ""};
   if (status <= 0 || status >= 500)
-  {
-    restartAP();
-    return ActivationError::ServerError;
-  }
+    return {ActivationError::ServerError, "", ""};
 
-  // Parse response: { device_id, token }
   JsonDocument doc;
-  DeserializationError jsonErr = deserializeJson(doc, resp);
-  String token        = jsonErr ? String() : doc["token"].as<String>();
-  String deviceId     = jsonErr ? String() : doc["device_id"].as<String>();
-  String mqttUsername = jsonErr ? String() : doc["mqtt_username"].as<String>();
-  String mqttPassword = jsonErr ? String() : doc["mqtt_password"].as<String>();
-  String mqttHost     = jsonErr ? String() : doc["mqtt_host"].as<String>();
-  Serial.printf("Activation: token length=%d  device_id=%s  mqtt_username=%s\n",
-                token.length(),
-                deviceId.isEmpty() ? "(missing)" : deviceId.c_str(),
-                mqttUsername.isEmpty() ? "(missing)" : mqttUsername.c_str());
+  if (deserializeJson(doc, resp))
+    return {ActivationError::ServerError, "", ""};
+
+  String token    = doc["token"].as<String>();
+  String deviceId = doc["device_id"].as<String>();
+
   if (token.isEmpty())
   {
-    Serial.println("Activation: server returned empty token — DEVICE_JWT_PRIVATE_KEY not configured on server");
-    restartAP();
-    return ActivationError::ServerError;
+    Serial.println("Activation: empty token — DEVICE_JWT_PRIVATE_KEY not configured");
+    return {ActivationError::ServerError, "", ""};
   }
-  if (mqttUsername.isEmpty() || mqttPassword.isEmpty())
+  if (deviceId.isEmpty())
   {
-    Serial.println("Activation: server returned no MQTT credentials — HIVEMQ_API_BASE_URL not configured on server");
-    restartAP();
-    return ActivationError::ServerError;
+    Serial.println("Activation: empty device_id in response");
+    return {ActivationError::ServerError, "", ""};
   }
 
-  nvsStore.set("device_jwt", token);
-  if (!deviceId.isEmpty())     nvsStore.set("device_id",      deviceId);
-  if (!mqttUsername.isEmpty()) nvsStore.set("mqtt_username",  mqttUsername);
-  if (!mqttPassword.isEmpty()) nvsStore.set("mqtt_password",  mqttPassword);
-  if (!mqttHost.isEmpty())     nvsStore.set("mqtt_host",      mqttHost);
-  Serial.printf("Activation: device_jwt=%s  device_id=%s  mqtt_username=%s  mqtt_host=%s\n",
-                nvsStore.get("device_jwt").isEmpty()    ? "FAILED" : "OK",
-                nvsStore.get("device_id").isEmpty()     ? "FAILED" : "OK",
-                nvsStore.get("mqtt_username").isEmpty() ? "FAILED" : "OK",
-                nvsStore.get("mqtt_host").isEmpty()     ? "FAILED" : "OK");
-  Serial.println("Activation successful. Rebooting...");
+  return {ActivationError::None, token, deviceId};
+}
+
+struct MqttCredentials {
+  String username;
+  String password;
+  String host;
+};
+
+// GET /devices/{id}/status — polls until ready or timeout (60 s).
+static ActivationError pollMqttCredentials(const String &deviceId,
+                                           const String &jwt,
+                                           const String &serverUrl,
+                                           MqttCredentials &out)
+{
+  String endpoint = serverUrl + "/devices/" + deviceId + "/status";
+  unsigned long deadline = millis() + 60000UL;
+  int attempt = 0;
+
+  while (millis() < deadline)
+  {
+    attempt++;
+    HTTPClient http;
+    http.begin(endpoint);
+    http.addHeader("Authorization", "Bearer " + jwt);
+    int status = http.GET();
+    String resp = (status > 0) ? http.getString() : "";
+    http.end();
+
+    Serial.printf("Status poll #%d: GET %s -> %d\n", attempt, endpoint.c_str(), status);
+
+    if (status == 200)
+    {
+      JsonDocument doc;
+      if (!deserializeJson(doc, resp))
+      {
+        String s = doc["status"].as<String>();
+        if (s == "ready")
+        {
+          out.username = doc["mqtt_username"].as<String>();
+          out.password = doc["mqtt_password"].as<String>();
+          out.host     = doc["mqtt_host"].as<String>();
+          if (!out.username.isEmpty() && !out.password.isEmpty() && !out.host.isEmpty())
+          {
+            Serial.println("Status poll: ready — MQTT credentials received");
+            return ActivationError::None;
+          }
+        }
+        else
+        {
+          Serial.println("Status poll: still provisioning...");
+        }
+      }
+    }
+
+    delay(2000);
+  }
+
+  Serial.println("Status poll: timed out after 60s");
+  return ActivationError::Timeout;
+}
+
+// ─── handleConfigure ─────────────────────────────────────────────────────────
+
+static void handleRoot()
+{
+  server.send(200, "text/html", buildForm(pendingError, "", reconfiguring));
+  pendingError = "";
+}
+
+static void handleConfigure()
+{
+  String ssid = server.arg("wifi_ssid");
+  if (ssid == "__other__")
+    ssid = server.arg("wifi_ssid_manual");
+  ssid.trim();
+
+  String password = server.arg("wifi_password");
+
+  // ── Reconfiguration path: update Wi-Fi only ──────────────────────────────
+  if (reconfiguring)
+  {
+    Serial.printf("Reconfigure: ssid=%s\n", ssid.c_str());
+
+    if (ssid.isEmpty() || password.isEmpty())
+    {
+      server.send(200, "text/html",
+                  buildForm("All fields are required.", ssid, true));
+      return;
+    }
+
+    // Write to temp keys first — existing credentials are untouched until
+    // we confirm the new Wi-Fi actually works.
+    nvsStore.set("wifi_ssid_new", ssid);
+    nvsStore.set("wifi_pass_new", password);
+
+    server.send(200, "text/html", buildConnecting());
+    server.client().flush();
+    delay(500);
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid.c_str(), password.c_str());
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
+      delay(200);
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      Serial.println("Reconfigure: Wi-Fi connect failed — reverting");
+      nvsStore.remove("wifi_ssid_new");
+      nvsStore.remove("wifi_pass_new");
+      restartAP();
+      // pendingError shown when user's browser reconnects to the portal
+      pendingError = "Could not connect to Wi-Fi. Check the network name and password.";
+      return;
+    }
+
+    // Success — promote temp keys to real keys and reboot.
+    nvsStore.set("wifi_ssid", ssid);
+    nvsStore.set("wifi_pass", password);
+    nvsStore.remove("wifi_ssid_new");
+    nvsStore.remove("wifi_pass_new");
+    Serial.println("Reconfigure: Wi-Fi updated. Rebooting...");
+    delay(500);
+    ESP.restart();
+    return;
+  }
+
+  // ── Fresh provisioning path ───────────────────────────────────────────────
+  String code = server.arg("provision_code");
+  code.trim();
+
+  Serial.printf("Configure: ssid=%s code=%s\n", ssid.c_str(), code.c_str());
+
+  if (ssid.isEmpty() || password.isEmpty() || code.isEmpty())
+  {
+    server.send(200, "text/html",
+                buildForm("All fields are required.", ssid, false));
+    return;
+  }
+
+  // Send connecting page immediately — browser will lose connection once we
+  // drop the AP to connect to the user's network.
+  server.send(200, "text/html", buildConnecting());
+  server.client().flush();
+  delay(500);
+
+  // Connect to Wi-Fi.
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), password.c_str());
+  Serial.printf("Connecting to Wi-Fi SSID=%s\n", ssid.c_str());
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
+    delay(200);
+
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.println("Wi-Fi connect timed out");
+    restartAP();
+    pendingError = "Could not connect to Wi-Fi. Check the network name and password.";
+    return;
+  }
+  Serial.printf("Wi-Fi connected — IP: %s\n", WiFi.localIP().toString().c_str());
+
+  // Normalize server URL to HTTPS on non-local addresses.
+  String serverUrl = SERVER_URL;
+  if (serverUrl.startsWith("http://") && !serverUrl.startsWith("http://192.") &&
+      !serverUrl.startsWith("http://10.")  && !serverUrl.startsWith("http://172."))
+  {
+    serverUrl.replace("http://", "https://");
+  }
+
+  // POST /devices/activate — returns 202 with token + device_id.
+  ActivateResult activation = postActivate(code, serverUrl);
+  if (activation.err == ActivationError::InvalidCode)
+  {
+    restartAP();
+    pendingError = "Invalid provisioning code. Generate a new one in the app.";
+    return;
+  }
+  if (activation.err != ActivationError::None)
+  {
+    restartAP();
+    pendingError = "Could not reach the server. Check the server configuration.";
+    return;
+  }
+
+  // Store Wi-Fi and identity — but do NOT set provisioned flag yet.
+  nvsStore.set("wifi_ssid",  ssid);
+  nvsStore.set("wifi_pass",  password);
+  nvsStore.set("device_jwt", activation.token);
+  nvsStore.set("device_id",  activation.deviceId);
+
+  // Poll GET /devices/{id}/status until MQTT credentials are ready.
+  MqttCredentials creds;
+  ActivationError pollErr = pollMqttCredentials(activation.deviceId,
+                                                activation.token,
+                                                serverUrl, creds);
+  if (pollErr != ActivationError::None)
+  {
+    // Credentials not ready — clear partial NVS state and return to portal.
+    nvsStore.remove("device_jwt");
+    nvsStore.remove("device_id");
+    restartAP();
+    pendingError = "Server is still provisioning your device. Please try again in a moment.";
+    return;
+  }
+
+  // All credentials confirmed — write atomically (provisioned flag last).
+  nvsStore.set("mqtt_username", creds.username);
+  nvsStore.set("mqtt_password", creds.password);
+  nvsStore.set("mqtt_host",     creds.host);
+  nvsStore.set("provisioned",   "1");
+
+  Serial.println("Provisioning complete. Rebooting...");
   delay(1000);
   ESP.restart();
-  return ActivationError::None; // unreachable
 }
+
+// ─── startProvisioning ────────────────────────────────────────────────────────
 
 void startProvisioning()
 {
-  // Reconfiguring if the device already has a JWT (or a legacy hex token) — no code needed.
-  // Devices provisioned before the JWT migration will have device_token; treat them as
-  // reconfiguring so they reach the captive portal and can re-activate with a new code.
+  // Reconfiguring if the device already has a JWT — no activation code needed.
   reconfiguring = !nvsStore.get("device_jwt").isEmpty();
   Serial.printf("Provisioning mode: %s\n", reconfiguring ? "reconfiguration" : "fresh");
 
@@ -402,7 +471,6 @@ void startProvisioning()
   scannedSSIDs.clear();
   scanDone = false;
 
-  // WIFI_AP_STA is required for WiFi.scanNetworks() to work while hosting an AP
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP("FishHub-Setup");
 

@@ -13,8 +13,16 @@
 #define DS18B20_INTERVAL_MS 30000
 #endif
 
-PeripheralManager manager;
-FishHubMqttClient mqttClient;
+enum class State {
+  CHECK_PROVISIONED,
+  PROVISIONING_MODE,
+  CONNECT_WIFI,
+  NORMAL_OPERATION,
+};
+
+static State state = State::CHECK_PROVISIONED;
+static PeripheralManager manager;
+static FishHubMqttClient mqttClient;
 
 static void logNvsKey(const char *key)
 {
@@ -35,45 +43,50 @@ void setup()
   logNvsKey("wifi_pass");
   logNvsKey("device_id");
   logNvsKey("device_jwt");
+  logNvsKey("mqtt_username");
+  logNvsKey("mqtt_host");
+  logNvsKey("provisioned");
 
-  bool provisioned =
-      !nvsStore.get("wifi_ssid").isEmpty() &&
-      !nvsStore.get("wifi_pass").isEmpty() &&
-      !nvsStore.get("device_id").isEmpty() &&
-      !nvsStore.get("device_jwt").isEmpty();
-
-  if (!provisioned)
+  // ── CHECK_PROVISIONED ─────────────────────────────────────────────────────
+  if (!nvsStore.isProvisioned())
   {
-    Serial.println("One or more NVS keys missing — entering provisioning mode");
-    startProvisioning(); // never returns — device reboots after activation
+    Serial.println("Device not fully provisioned — entering provisioning mode");
+    state = State::PROVISIONING_MODE;
+    startProvisioning(); // never returns — reboots on success, loops on error
+    return;
   }
 
+  // ── CONNECT_WIFI ──────────────────────────────────────────────────────────
+  state = State::CONNECT_WIFI;
   connectWifi();
   waitForNtp();
 
+  // ── NORMAL_OPERATION ──────────────────────────────────────────────────────
+  state = State::NORMAL_OPERATION;
   manager.add(new DS18B20Sensor(ONE_WIRE_PIN, DS18B20_INTERVAL_MS));
   manager.add(new RelayActuator("light", RELAY_LIGHT_PIN));
   manager.beginAll();
-
   mqttClient.begin(manager);
 }
 
 void loop()
 {
+  if (state != State::NORMAL_OPERATION)
+    return;
+
+  // ── Button handling ───────────────────────────────────────────────────────
   if (digitalRead(RESET_BUTTON_PIN) == LOW)
   {
     Serial.println("Reset button pressed");
     Serial.println("- 3s  => enter provisioning mode");
-    Serial.println("- 10s => clear data");
+    Serial.println("- 10s => clear all data");
 
     unsigned long pressStart = millis();
     while (digitalRead(RESET_BUTTON_PIN) == LOW)
     {
-      unsigned long heldUntilNow = millis() - pressStart;
-      Serial.printf("Held for %d ms\n", heldUntilNow);
+      Serial.printf("Held for %lu ms\n", millis() - pressStart);
       delay(50);
     }
-
     unsigned long held = millis() - pressStart;
 
     if (held >= 10000)
@@ -85,10 +98,12 @@ void loop()
     else if (held >= 3000)
     {
       Serial.println("Button held 3s — entering reconfiguration mode...");
+      state = State::PROVISIONING_MODE;
       startProvisioning(); // never returns
     }
   }
 
+  // ── Sensor + MQTT tick ────────────────────────────────────────────────────
   mqttClient.loop();
 
   time_t now = time(nullptr);

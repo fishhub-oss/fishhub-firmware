@@ -21,3 +21,14 @@ void NVSStore::remove(const char* key) {
 void NVSStore::clear() {
   _prefs.clear();
 }
+
+bool NVSStore::isProvisioned() {
+  return get("wifi_ssid")     != "" &&
+         get("wifi_pass")     != "" &&
+         get("device_id")     != "" &&
+         get("device_jwt")    != "" &&
+         get("mqtt_username") != "" &&
+         get("mqtt_password") != "" &&
+         get("mqtt_host")     != "" &&
+         get("provisioned")   == "1";
+}
