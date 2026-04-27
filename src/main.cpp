@@ -13,103 +13,95 @@
 #define DS18B20_INTERVAL_MS 30000
 #endif
 
-enum class State {
-  CHECK_PROVISIONED,
-  PROVISIONING_MODE,
-  CONNECT_WIFI,
-  NORMAL_OPERATION,
-};
-
-static State state = State::CHECK_PROVISIONED;
 static PeripheralManager manager;
 static FishHubMqttClient mqttClient;
 
-static void logNvsKey(const char *key)
-{
-  String val = nvsStore.get(key);
-  Serial.printf("  NVS %-14s %s\n", key, val.isEmpty() ? "MISSING" : "present");
-}
-
-void setup()
+static void boot()
 {
   Serial.begin(115200);
   Serial.println("FishHub firmware booting...");
-
   nvsStore.begin();
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
   Serial.println("NVS key status:");
-  logNvsKey("wifi_ssid");
-  logNvsKey("wifi_pass");
-  logNvsKey("device_id");
-  logNvsKey("device_jwt");
-  logNvsKey("mqtt_username");
-  logNvsKey("mqtt_host");
-  logNvsKey("provisioned");
-
-  // ── CHECK_PROVISIONED ─────────────────────────────────────────────────────
-  if (!nvsStore.isProvisioned())
+  for (const char *key : {"wifi_ssid", "wifi_pass", "device_id", "device_jwt",
+                           "mqtt_username", "mqtt_host", "provisioned"})
   {
-    Serial.println("Device not fully provisioned — entering provisioning mode");
-    state = State::PROVISIONING_MODE;
-    startProvisioning(); // never returns — reboots on success, loops on error
-    return;
+    Serial.printf("  NVS %-14s %s\n", key,
+                  nvsStore.get(key).isEmpty() ? "MISSING" : "present");
   }
+}
 
-  // ── CONNECT_WIFI ──────────────────────────────────────────────────────────
-  state = State::CONNECT_WIFI;
+static void provisioningMode()
+{
+  Serial.println("Device not fully provisioned — entering provisioning mode");
+  startProvisioning(); // never returns — reboots on success, loops on error
+}
+
+static void connectToWifi()
+{
   connectWifi();
   waitForNtp();
+}
 
-  // ── NORMAL_OPERATION ──────────────────────────────────────────────────────
-  state = State::NORMAL_OPERATION;
+static void normalOperation()
+{
   manager.add(new DS18B20Sensor(ONE_WIRE_PIN, DS18B20_INTERVAL_MS));
   manager.add(new RelayActuator("light", RELAY_LIGHT_PIN));
   manager.beginAll();
   mqttClient.begin(manager);
 }
 
-void loop()
+static void handleButton()
 {
-  if (state != State::NORMAL_OPERATION)
+  if (digitalRead(RESET_BUTTON_PIN) != LOW)
     return;
 
-  // ── Button handling ───────────────────────────────────────────────────────
-  if (digitalRead(RESET_BUTTON_PIN) == LOW)
+  Serial.println("Reset button pressed");
+  Serial.println("- 3s  => enter provisioning mode");
+  Serial.println("- 10s => clear all data");
+
+  unsigned long pressStart = millis();
+  while (digitalRead(RESET_BUTTON_PIN) == LOW)
   {
-    Serial.println("Reset button pressed");
-    Serial.println("- 3s  => enter provisioning mode");
-    Serial.println("- 10s => clear all data");
-
-    unsigned long pressStart = millis();
-    while (digitalRead(RESET_BUTTON_PIN) == LOW)
-    {
-      Serial.printf("Held for %lu ms\n", millis() - pressStart);
-      delay(50);
-    }
-    unsigned long held = millis() - pressStart;
-
-    if (held >= 10000)
-    {
-      Serial.println("Button held 10s — clearing NVS and rebooting...");
-      nvsStore.clear();
-      ESP.restart();
-    }
-    else if (held >= 3000)
-    {
-      Serial.println("Button held 3s — entering reconfiguration mode...");
-      state = State::PROVISIONING_MODE;
-      startProvisioning(); // never returns
-    }
+    Serial.printf("Held for %lu ms\n", millis() - pressStart);
+    delay(50);
   }
+  unsigned long held = millis() - pressStart;
 
-  // ── Sensor + MQTT tick ────────────────────────────────────────────────────
+  if (held >= 10000)
+  {
+    Serial.println("Button held 10s — clearing NVS and rebooting...");
+    nvsStore.clear();
+    ESP.restart();
+  }
+  else if (held >= 3000)
+  {
+    Serial.println("Button held 3s — entering reconfiguration mode...");
+    provisioningMode(); // never returns
+  }
+}
+
+static void sensorTick()
+{
   mqttClient.loop();
-
   time_t now = time(nullptr);
   String payload = manager.tickAll(now, millis());
   if (!payload.isEmpty())
-  {
     postReading(payload);
-  }
+}
+
+void setup()
+{
+  boot();
+  if (!nvsStore.isProvisioned())
+    provisioningMode();
+  connectToWifi();
+  normalOperation();
+}
+
+void loop()
+{
+  handleButton();
+  sensorTick();
 }
