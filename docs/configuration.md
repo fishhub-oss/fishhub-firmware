@@ -23,15 +23,38 @@ Device credentials are stored in ESP32 NVS (non-volatile storage) and written vi
    - **Provisioning code** — one-time code from the web app
 5. Submit the form. The device:
    1. Connects to the specified Wi-Fi network.
-   2. POSTs `{"code":"<provisioning-code>"}` to `SERVER_URL/devices/activate` (the URL compiled into the firmware from `config.h`).
-   3. Parses the JWT and MQTT credentials from the response and stores them in NVS.
-   4. Reboots into normal operation.
+   2. POSTs `{"code":"<provisioning-code>"}` to `SERVER_URL/devices/activate`.
+   3. Receives `202` with `{token, device_id}`.
+   4. Polls `GET /devices/{id}/status` every 2 s (up to 60 s) until the server responds `"ready"` with MQTT credentials.
+   5. Writes all credentials to NVS atomically — the `provisioned` flag is set last.
+   6. Reboots into normal operation.
 
-If activation fails (wrong code, Wi-Fi unreachable, server error) the portal displays an error page. The device can be retried without reflashing.
+If activation fails (wrong code, Wi-Fi unreachable, server error, or 60 s poll timeout) the portal displays an error. The device can be retried without reflashing.
+
+### NVS keys written during provisioning
+
+| Key | Description |
+|---|---|
+| `wifi_ssid` | Wi-Fi network name |
+| `wifi_pass` | Wi-Fi password |
+| `device_id` | UUID assigned by the server |
+| `device_jwt` | Bearer token for authenticating to the server |
+| `mqtt_username` | HiveMQ Cloud username |
+| `mqtt_password` | HiveMQ Cloud password |
+| `mqtt_host` | HiveMQ Cloud hostname |
+| `provisioned` | Atomicity flag — written `"1"` last; absent means provisioning was interrupted |
+
+The `provisioned` flag makes writes atomic: if power is lost between writing individual keys and setting the flag, `isProvisioned()` returns `false` and the device re-enters AP mode on the next boot so the user can try again.
 
 ### Reconfiguration (update Wi-Fi credentials)
 
-Hold the **BOOT button** (GPIO 0) for **3 seconds** while the device is running. The device starts the AP in reconfiguration mode — the form shows only the Wi-Fi fields (no provisioning code). Submitting saves the new Wi-Fi credentials to NVS and reboots. The existing `device_jwt` and MQTT credentials are preserved; no server call is made.
+Hold the **BOOT button** (GPIO 0) for **3 seconds** while the device is running. The device starts the AP in reconfiguration mode — the form shows only the Wi-Fi fields (no provisioning code).
+
+The new credentials are written to temporary NVS keys (`wifi_ssid_new`, `wifi_pass_new`) first. The device attempts to connect; if it succeeds the real keys are updated and the device reboots. If it fails the temporary keys are deleted and an error is shown — existing credentials are never modified. The existing `device_jwt` and MQTT credentials are always preserved; no server call is made.
+
+### Factory reset (clear all data)
+
+Hold the **BOOT button** for **10 seconds**. This clears all NVS keys (including `provisioned`) and reboots. The device starts fresh provisioning mode.
 
 ---
 
@@ -52,19 +75,22 @@ Then fill in the defines:
 #define WIFI_PASSWORD "your-password"
 
 #define SERVER_URL   "http://192.168.x.x:8080"
-#define DEVICE_TOKEN "your-64-char-hex-token"
+
+#define MQTT_HOST    "your-cluster.hivemq.cloud"
+#define MQTT_PORT    8883
+#define DEVICE_ID    ""   // leave empty — populated by provisioning
 ```
 
 | Define | Description |
 |---|---|
-| `WIFI_SSID` | SSID of the Wi-Fi network the ESP32 will join |
-| `WIFI_PASSWORD` | Wi-Fi password |
-| `SERVER_URL` | Base URL of the FishHub backend (required at compile time — never entered at provisioning). Use the local IP of the machine running the server — `localhost` won't resolve on device. `"/readings"` is appended automatically by `http_client`. |
-| `MQTT_HOST` | HiveMQ broker hostname (used as fallback if NVS is empty) |
-| `MQTT_PORT` | HiveMQ broker port (default `8883`) |
-| `DEVICE_ID` | Device ID — leave empty; populated automatically by provisioning |
+| `WIFI_SSID` | SSID of the Wi-Fi network the ESP32 will join (NVS takes precedence on provisioned devices) |
+| `WIFI_PASSWORD` | Wi-Fi password (NVS takes precedence) |
+| `SERVER_URL` | Base URL of the FishHub backend — compiled in at build time, never stored in NVS. Use the local IP; `localhost` won't resolve on device. `"/readings"` and `"/devices/..."` paths are appended by the firmware. |
+| `MQTT_HOST` | HiveMQ Cloud broker hostname (NVS takes precedence on provisioned devices) |
+| `MQTT_PORT` | HiveMQ Cloud broker port (default `8883`) |
+| `DEVICE_ID` | Leave empty — populated automatically by provisioning |
 
-`SERVER_URL` is always read from `config.h` at compile time — it is never stored in NVS. `WIFI_SSID` and `WIFI_PASSWORD` are fallbacks used when NVS is empty; on a provisioned device the NVS values take precedence.
+`SERVER_URL` is always read from `config.h` at compile time. `WIFI_SSID`, `WIFI_PASSWORD`, and `MQTT_HOST` are fallbacks used only when the corresponding NVS keys are empty.
 
 ## `include/pins.h`
 
@@ -72,7 +98,8 @@ Pin assignments are in `include/pins.h`:
 
 ```cpp
 #define ONE_WIRE_PIN      4   // DS18B20 data line
-#define RESET_BUTTON_PIN  0   // BOOT button (active LOW) — hold 3 s to reconfigure
+#define RESET_BUTTON_PIN  0   // BOOT button (active LOW) — hold 3s to reconfigure, 10s to factory reset
+#define RELAY_LIGHT_PIN   X   // GPIO for the light relay — set to your wiring
 ```
 
-GPIO 4 is the data line for the DS18B20 OneWire bus. GPIO 0 is the onboard BOOT button; holding it LOW for 3 seconds during normal operation triggers reconfiguration mode. Change `ONE_WIRE_PIN` if you wire the sensor to a different pin.
+GPIO 4 is the data line for the DS18B20 OneWire bus. GPIO 0 is the onboard BOOT button. Change `ONE_WIRE_PIN` or `RELAY_LIGHT_PIN` if you wire the hardware to different pins.

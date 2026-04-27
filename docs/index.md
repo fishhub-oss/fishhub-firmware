@@ -1,13 +1,14 @@
 # fishhub-firmware — Documentation Index
 
-ESP32 Arduino firmware for FishHub aquarium monitoring. On first boot (or after a factory reset) the device starts a captive-portal Wi-Fi AP for provisioning. Once provisioned, each boot cycle reads water temperature from a DS18B20 probe, formats a SenML JSON payload, POSTs it to the FishHub backend, and loops.
+ESP32 Arduino firmware for FishHub aquarium monitoring. On first boot (or after a factory reset) the device starts a captive-portal Wi-Fi AP for provisioning. Once provisioned, the device reads sensor data, publishes it to the FishHub backend, and responds to MQTT commands from the server.
 
 ## Contents
 
 | Document | What it covers |
 |---|---|
-| [architecture.md](architecture.md) | Source layout, module responsibilities, boot flow |
-| [configuration.md](configuration.md) | `config.h` required defines, device provisioning |
+| [architecture.md](architecture.md) | Source layout, module responsibilities, boot flow, command flow |
+| [configuration.md](configuration.md) | `config.h` required defines, device provisioning, NVS keys |
+| [peripherals.md](peripherals.md) | `Peripheral` interface, `PeripheralManager`, concrete implementations, adding new peripherals |
 | [wire-format.md](wire-format.md) | SenML JSON structure, example payload, field semantics |
 | [development.md](development.md) | Build, flash, Serial monitor, unit tests |
 
@@ -19,8 +20,8 @@ pio run --target upload
 
 # 2. On first boot the device starts AP "FishHub-Setup"
 #    Connect to it from your phone or laptop, then open 192.168.4.1
-#    Fill in Wi-Fi credentials, server URL, and the provisioning code
-#    from the FishHub web app. The device reboots into normal operation.
+#    Fill in Wi-Fi credentials and the provisioning code from the FishHub web app.
+#    The device reboots into normal operation.
 
 # 3. Monitor Serial output
 pio device monitor
@@ -38,8 +39,12 @@ pio device monitor
 | Temperature sensor | DS18B20 via OneWire / DallasTemperature |
 | JSON serialization | ArduinoJson v7 |
 | HTTP client | ESP32 built-in HTTPClient |
+| MQTT client | PubSubClient over TLS (HiveMQ Cloud, port 8883) |
 | Wire format | SenML JSON (RFC 8428) |
-| Auth | Bearer token stored in NVS (provisioned via captive portal) |
+| Auth | Bearer JWT stored in NVS (provisioned via captive portal) |
+| MQTT auth | Username / password stored in NVS (provisioned via server at activation) |
 | Persistent storage | ESP32 NVS via Arduino `Preferences` |
 | Captive portal | Arduino `WebServer` (ESP32 built-in) |
+| Peripheral abstraction | `Peripheral` interface + `PeripheralManager` |
+| Actuator scheduling | `Schedule` class — time windows + override state |
 | Background tasks | FreeRTOS tasks (Wi-Fi scan during provisioning) |
