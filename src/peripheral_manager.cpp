@@ -6,12 +6,28 @@
 
 void PeripheralManager::add(Peripheral* p) {
   _entries.push_back({p, 0});
+  if (_begun) p->begin();
 }
 
 void PeripheralManager::beginAll() {
   for (auto& e : _entries) {
     e.peripheral->begin();
   }
+  _begun = true;
+}
+
+void PeripheralManager::remove(const String& name) {
+  for (auto it = _entries.begin(); it != _entries.end(); ++it) {
+    if (name == it->peripheral->name()) {
+      delete it->peripheral;
+      _entries.erase(it);
+      return;
+    }
+  }
+}
+
+bool PeripheralManager::has(const String& name) const {
+  return find(name) != nullptr;
 }
 
 String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
@@ -56,7 +72,7 @@ void PeripheralManager::dispatchCommand(const String& name, JsonObjectConst cmd)
   }
 }
 
-Peripheral* PeripheralManager::find(const String& name) {
+Peripheral* PeripheralManager::find(const String& name) const {
   for (auto& e : _entries) {
     if (name == e.peripheral->name()) return e.peripheral;
   }

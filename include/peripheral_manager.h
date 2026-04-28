@@ -20,8 +20,17 @@ struct PeripheralEntry {
 
 class PeripheralManager {
 public:
+  // Adds a peripheral. If beginAll() has already been called, begin() is
+  // invoked immediately so late-registered peripherals are initialised.
+  // Ownership of the pointer is transferred — remove() will delete it.
   void add(Peripheral* p);
   void beginAll();
+
+  // Removes the peripheral with the given name and deletes the object.
+  void remove(const String& name);
+
+  // Returns true if a peripheral with the given name is registered.
+  bool has(const String& name) const;
 
   // Ticks each peripheral when its interval has elapsed.
   // nowMs is injected so tests can pass a fake counter instead of millis().
@@ -32,8 +41,9 @@ public:
   void dispatchCommand(const String& name, JsonObjectConst cmd);
 
   // Returns the peripheral with the given name, or nullptr if not found.
-  Peripheral* find(const String& name);
+  Peripheral* find(const String& name) const;
 
 private:
   std::vector<PeripheralEntry> _entries;
+  bool _begun = false;
 };

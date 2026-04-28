@@ -1,8 +1,8 @@
 #include "relay_actuator.h"
 #include <Arduino.h>
 
-RelayActuator::RelayActuator(const char* name, uint8_t pin)
-  : _name(name), _pin(pin) {}
+RelayActuator::RelayActuator(std::string name, uint8_t pin)
+  : _name(std::move(name)), _pin(pin) {}
 
 void RelayActuator::begin() {
   pinMode(_pin, OUTPUT);
@@ -18,7 +18,7 @@ bool RelayActuator::tick(time_t now) {
     // Active-low: LOW energizes the relay (on), HIGH de-energizes (off)
     digitalWrite(_pin, desired ? LOW : HIGH);
     _currentState = desired;
-    Serial.printf("Relay %s: %s\n", _name, desired ? "ON" : "OFF");
+    Serial.printf("Relay %s: %s\n", _name.c_str(), desired ? "ON" : "OFF");
   }
   if (changed || now - _lastSentAt >= ACTUATOR_HEARTBEAT_S) {
     _lastChanged = changed;
@@ -30,12 +30,12 @@ bool RelayActuator::tick(time_t now) {
 
 void RelayActuator::appendSenML(JsonArray& records, time_t /*now*/) {
   JsonObject state = records.add<JsonObject>();
-  String n = String(_name) + "/state";
+  String n = String(_name.c_str()) + "/state";
   state["n"]  = n;
   state["vb"] = _currentState;
 
   JsonObject src = records.add<JsonObject>();
-  String ns = String(_name) + "/source";
+  String ns = String(_name.c_str()) + "/source";
   src["n"]  = ns;
   src["vs"] = _lastChanged ? "change" : "heartbeat";
 }

@@ -1,6 +1,7 @@
 #include "mqtt_client.h"
 #include "nvs_store.h"
 #include "config.h"
+#include "peripherals/relay_actuator.h"
 #include <ArduinoJson.h>
 
 static const unsigned long RECONNECT_INTERVAL_MS = 5000;
@@ -93,18 +94,33 @@ void FishHubMqttClient::connect() {
     return;
   }
 
-  String topic = "fishhub/" + _deviceId + "/commands/#";
-  _client.subscribe(topic.c_str());
-  Serial.printf("MQTT: connected, subscribed to %s\n", topic.c_str());
+  String cmdTopic         = "fishhub/" + _deviceId + "/commands/#";
+  String peripheralsTopic = "fishhub/" + _deviceId + "/peripherals/#";
+  _client.subscribe(cmdTopic.c_str());
+  _client.subscribe(peripheralsTopic.c_str());
+  Serial.printf("MQTT: connected, subscribed to commands and peripherals topics\n");
 }
 
 void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) {
-  // Extract peripheral name from last topic segment: fishhub/<id>/commands/<name>
   String t(topic);
-  int lastSlash = t.lastIndexOf('/');
-  if (lastSlash < 0) return;
-  String peripheralName = t.substring(lastSlash + 1);
+  String prefix = "fishhub/" + _deviceId + "/";
+  if (!t.startsWith(prefix)) return;
 
+  String rest  = t.substring(prefix.length()); // e.g. "commands/light" or "peripherals/light"
+  int slash    = rest.indexOf('/');
+  if (slash < 0) return;
+
+  String segment = rest.substring(0, slash);
+  String name    = rest.substring(slash + 1);
+
+  if (segment == "peripherals") {
+    onPeripheralConfig(name, payload, len);
+    return;
+  }
+
+  if (segment != "commands") return;
+
+  // Command dispatch
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload, len);
   if (err) {
@@ -118,23 +134,59 @@ void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) 
     return;
   }
 
-  Peripheral* peripheral = _manager->find(peripheralName);
+  Peripheral* peripheral = _manager->find(name);
   if (!peripheral) {
-    Serial.printf("MQTT: no peripheral named '%s'\n", peripheralName.c_str());
+    Serial.printf("MQTT: no peripheral named '%s'\n", name.c_str());
     return;
   }
 
   if (!peripheral->replayCommand()) {
-    String nvsKey = String("cmd_") + peripheralName;
+    String nvsKey = String("cmd_") + name;
     String lastId = nvsStore.get(nvsKey.c_str());
     if (lastId == cmdId) {
       Serial.printf("MQTT: duplicate command id=%s for %s — skipped\n",
-                    cmdId, peripheralName.c_str());
+                    cmdId, name.c_str());
       return;
     }
     nvsStore.set(nvsKey.c_str(), String(cmdId));
   }
 
-  Serial.printf("MQTT: dispatching command id=%s to %s\n", cmdId, peripheralName.c_str());
-  _manager->dispatchCommand(peripheralName, doc.as<JsonObjectConst>());
+  Serial.printf("MQTT: dispatching command id=%s to %s\n", cmdId, name.c_str());
+  _manager->dispatchCommand(name, doc.as<JsonObjectConst>());
+}
+
+void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, unsigned int len) {
+  if (len == 0) return;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len)) {
+    Serial.printf("MQTT: bad JSON on peripherals/%s\n", name.c_str());
+    return;
+  }
+
+  const char* op = doc["op"];
+  if (!op) return;
+
+  if (strcmp(op, "delete") == 0) {
+    Serial.printf("MQTT: removing peripheral '%s'\n", name.c_str());
+    _manager->remove(name);
+    return;
+  }
+
+  if (strcmp(op, "create") == 0) {
+    if (_manager->has(name)) {
+      Serial.printf("MQTT: peripheral '%s' already registered — skipping\n", name.c_str());
+      return;
+    }
+    const char* kind = doc["kind"];
+    int pin = doc["pin"] | -1;
+    if (!kind || pin < 0) {
+      Serial.printf("MQTT: peripheral '%s' missing kind or pin\n", name.c_str());
+      return;
+    }
+    if (strcmp(kind, "relay") == 0) {
+      _manager->add(new RelayActuator(name.c_str(), (uint8_t)pin));
+      Serial.printf("MQTT: registered relay '%s' on pin %d\n", name.c_str(), pin);
+    }
+  }
 }
