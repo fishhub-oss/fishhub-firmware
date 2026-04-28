@@ -7,7 +7,6 @@
 #include "mqtt_client.h"
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
-#include "peripherals/relay_actuator.h"
 
 #ifndef DS18B20_INTERVAL_MS
 #define DS18B20_INTERVAL_MS 30000
@@ -47,8 +46,8 @@ static void connectToWifi()
 static void normalOperation()
 {
   manager.add(new DS18B20Sensor(ONE_WIRE_PIN, DS18B20_INTERVAL_MS));
-  manager.add(new RelayActuator("light", RELAY_LIGHT_PIN));
   manager.beginAll();
+  // RelayActuator instances are registered dynamically via MQTT peripheral config
   mqttClient.begin(manager);
 }
 

@@ -198,6 +198,38 @@ void test_schedule_load_clears_override() {
   TEST_ASSERT_FALSE(s.hasOverride());
 }
 
+// ── PeripheralManager remove / has ───────────────────────────────────────────
+
+void test_manager_remove(void) {
+  PeripheralManager mgr;
+  mgr.add(new MockPeripheral("light", 1000));
+  mgr.beginAll();
+  mgr.remove("light");
+  TEST_ASSERT_NULL(mgr.find("light"));
+}
+
+void test_manager_has(void) {
+  PeripheralManager mgr;
+  MockPeripheral p("light", 1000);
+  mgr.add(&p);
+  mgr.beginAll();
+  TEST_ASSERT_TRUE(mgr.has("light"));
+  TEST_ASSERT_FALSE(mgr.has("pump"));
+}
+
+void test_manager_add_after_begin_calls_begin(void) {
+  PeripheralManager mgr;
+  mgr.beginAll();
+  MockPeripheral* p = new MockPeripheral("late", 1000);
+  mgr.add(p);
+  // A peripheral added after beginAll() should be ticked immediately
+  // at t=1000ms without an explicit beginAll() call.
+  String out = mgr.tickAll(0, 1000);
+  TEST_ASSERT_FALSE(out.empty());
+  TEST_ASSERT_EQUAL_INT(1, p->tickCount);
+  mgr.remove("late");
+}
+
 // ── entry point ──────────────────────────────────────────────────────────────
 
 void setUp(void) {}
@@ -223,5 +255,8 @@ int main(void) {
   RUN_TEST(test_schedule_override_true);
   RUN_TEST(test_schedule_override_false);
   RUN_TEST(test_schedule_load_clears_override);
+  RUN_TEST(test_manager_remove);
+  RUN_TEST(test_manager_has);
+  RUN_TEST(test_manager_add_after_begin_calls_begin);
   return UNITY_END();
 }
