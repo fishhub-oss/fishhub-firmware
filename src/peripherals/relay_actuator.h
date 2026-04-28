@@ -27,5 +27,6 @@ private:
   uint8_t     _pin;
   Schedule    _schedule;
   bool        _currentState = false;
+  bool        _lastChanged  = false;
   time_t      _lastSentAt   = 0;
 };
