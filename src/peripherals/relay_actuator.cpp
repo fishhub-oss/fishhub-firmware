@@ -21,17 +21,23 @@ bool RelayActuator::tick(time_t now) {
     Serial.printf("Relay %s: %s\n", _name, desired ? "ON" : "OFF");
   }
   if (changed || now - _lastSentAt >= ACTUATOR_HEARTBEAT_S) {
-    _lastSentAt = now;
+    _lastChanged = changed;
+    _lastSentAt  = now;
     return true;
   }
   return false;
 }
 
 void RelayActuator::appendSenML(JsonArray& records, time_t /*now*/) {
-  JsonObject r = records.add<JsonObject>();
+  JsonObject state = records.add<JsonObject>();
   String n = String(_name) + "/state";
-  r["n"]  = n;
-  r["vb"] = _currentState;
+  state["n"]  = n;
+  state["vb"] = _currentState;
+
+  JsonObject src = records.add<JsonObject>();
+  String ns = String(_name) + "/source";
+  src["n"]  = ns;
+  src["vs"] = _lastChanged ? "change" : "heartbeat";
 }
 
 void RelayActuator::applyCommand(JsonObjectConst cmd) {
