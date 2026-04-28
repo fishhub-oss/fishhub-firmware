@@ -63,6 +63,7 @@ void FishHubMqttClient::begin(PeripheralManager& manager) {
   });
 
   connect();
+  _lastConnectAttempt = millis();
 }
 
 void FishHubMqttClient::loop() {
