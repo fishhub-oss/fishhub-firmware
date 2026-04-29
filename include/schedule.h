@@ -23,13 +23,17 @@ public:
   float activeValue(time_t now) const;
 
   // Sets the held value used in Manual mode. Does not change the mode itself.
-  void setManualValue(float value);
+  void  setManualValue(float value);
+  float manualValue() const { return _overrideValue; }
 
   // Switches between Manual and Automatic. Does not change the held value.
   void        setControlMode(ControlMode mode);
   ControlMode controlMode() const { return _mode; }
 
   bool hasOverride() const { return _mode == ControlMode::Manual; }
+
+  // Serialises the current window list into a JSON array (for NVS persistence).
+  void serializeWindows(JsonArray& out) const;
 
 private:
   struct Window {

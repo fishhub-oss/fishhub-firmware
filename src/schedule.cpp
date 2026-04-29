@@ -62,3 +62,22 @@ void Schedule::setManualValue(float value) {
 void Schedule::setControlMode(ControlMode mode) {
   _mode = mode;
 }
+
+void Schedule::serializeWindows(JsonArray& out) const {
+  for (const auto& w : _windows) {
+    JsonObject obj = out.add<JsonObject>();
+    // Reconstruct HH:MM strings from minutes
+    char from[6], to[6];
+    snprintf(from, sizeof(from), "%02d:%02d", w.fromMinutes / 60, w.fromMinutes % 60);
+    snprintf(to,   sizeof(to),   "%02d:%02d", w.toMinutes   / 60, w.toMinutes   % 60);
+    obj["from"]  = from;
+    obj["to"]    = to;
+    obj["value"] = w.value;
+    if (w.days != 0) {
+      JsonArray daysArr = obj["days"].to<JsonArray>();
+      for (int i = 0; i < 7; i++) {
+        if (w.days & (1 << i)) daysArr.add(i + 1);
+      }
+    }
+  }
+}

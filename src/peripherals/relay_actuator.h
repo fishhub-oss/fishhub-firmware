@@ -28,6 +28,9 @@ public:
   bool replayCommand() const override { return true; }
 
 private:
+  void _persistToNVS();
+  void _restoreFromNVS();
+
   std::string _name;
   uint8_t     _pin;
   Schedule    _schedule;
