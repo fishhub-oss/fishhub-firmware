@@ -4,7 +4,6 @@
 #include "nvs_store.h"
 #include "provisioning.h"
 #include "wifi_ntp.h"
-#include "http_client.h"
 #include "mqtt_client.h"
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
@@ -114,7 +113,7 @@ static void sensorTick()
   time_t now = time(nullptr);
   String payload = manager.tickAll(now, millis());
   if (!payload.isEmpty())
-    postReading(payload);
+    mqttClient.publishReading(payload);
 }
 
 void setup()

@@ -9,6 +9,7 @@ class FishHubMqttClient {
 public:
   void begin(PeripheralManager& manager);
   void loop();
+  bool publishReading(const String& payload);
 
 private:
   void connect();

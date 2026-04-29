@@ -174,6 +174,17 @@ static void savePeripheralsToNVS(PeripheralManager* mgr) {
   nvsStore.set("peripherals", json);
 }
 
+bool FishHubMqttClient::publishReading(const String& payload) {
+  if (!_client.connected()) {
+    Serial.println("MQTT: not connected — skipping publish");
+    return false;
+  }
+  String topic = "fishhub/" + _deviceId + "/readings";
+  bool ok = _client.publish(topic.c_str(), payload.c_str(), false);
+  if (!ok) Serial.println("MQTT: publishReading failed");
+  return ok;
+}
+
 void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, unsigned int len) {
   if (len == 0) return;
 
