@@ -2,6 +2,7 @@
 #include "nvs_store.h"
 #include "config.h"
 #include "peripherals/relay_actuator.h"
+#include "peripherals/ds18b20_sensor.h"
 #include <ArduinoJson.h>
 
 static const unsigned long RECONNECT_INTERVAL_MS = 5000;
@@ -57,6 +58,7 @@ void FishHubMqttClient::begin(PeripheralManager& manager) {
 
   _client.setClient(_tlsClient);
   _client.setBufferSize(1024);
+  _client.setKeepAlive(30);
   _client.setServer(_mqttHost.c_str(), _mqttPort);
   _client.setCallback([this](char* topic, byte* payload, unsigned int len) {
     onMessage(topic, payload, len);
@@ -156,6 +158,22 @@ void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) 
   _manager->dispatchCommand(name, doc.as<JsonObjectConst>());
 }
 
+// Persist the current peripheral list to NVS as a JSON array.
+static void savePeripheralsToNVS(PeripheralManager* mgr) {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  mgr->forEach([&arr](Peripheral* p, const char* kind, int pin) {
+    if (!kind || pin < 0) return;
+    JsonObject obj = arr.add<JsonObject>();
+    obj["name"] = p->name();
+    obj["kind"] = kind;
+    obj["pin"]  = pin;
+  });
+  String json;
+  serializeJson(doc, json);
+  nvsStore.set("peripherals", json);
+}
+
 void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, unsigned int len) {
   if (len == 0) return;
 
@@ -171,6 +189,7 @@ void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, un
   if (strcmp(op, "delete") == 0) {
     Serial.printf("MQTT: removing peripheral '%s'\n", name.c_str());
     _manager->remove(name);
+    savePeripheralsToNVS(_manager);
     return;
   }
 
@@ -186,8 +205,15 @@ void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, un
       return;
     }
     if (strcmp(kind, "relay") == 0) {
-      _manager->add(new RelayActuator(name.c_str(), (uint8_t)pin));
+      _manager->add(new RelayActuator(name.c_str(), (uint8_t)pin), "relay", pin);
       Serial.printf("MQTT: registered relay '%s' on pin %d\n", name.c_str(), pin);
+    } else if (strcmp(kind, "ds18b20") == 0) {
+      _manager->add(new DS18B20Sensor(name.c_str(), (uint8_t)pin), "ds18b20", pin);
+      Serial.printf("MQTT: registered ds18b20 '%s' on pin %d\n", name.c_str(), pin);
+    } else {
+      Serial.printf("MQTT: unknown peripheral kind '%s'\n", kind);
+      return;
     }
+    savePeripheralsToNVS(_manager);
   }
 }
