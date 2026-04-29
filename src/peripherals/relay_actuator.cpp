@@ -12,7 +12,7 @@ void RelayActuator::begin() {
 }
 
 bool RelayActuator::tick(time_t now) {
-  bool desired = _schedule.isActive(now);
+  bool desired = _schedule.activeValue(now) >= 0.5f;
   bool changed = desired != _currentState;
   if (changed) {
     // Active-low: LOW energizes the relay (on), HIGH de-energizes (off)
@@ -45,7 +45,17 @@ void RelayActuator::applyCommand(JsonObjectConst cmd) {
   if (!action) return;
 
   if (strcmp(action, "set") == 0) {
-    _schedule.setOverride(cmd["state"].as<bool>());
+    // Set value and implicitly enter Manual mode.
+    _schedule.setManualValue(cmd["value"] | 1.0f);
+    _schedule.setControlMode(ControlMode::Manual);
+  } else if (strcmp(action, "set_mode") == 0) {
+    const char* mode = cmd["mode"];
+    if (!mode) return;
+    if (strcmp(mode, "manual") == 0) {
+      _schedule.setControlMode(ControlMode::Manual);
+    } else if (strcmp(mode, "automatic") == 0) {
+      _schedule.setControlMode(ControlMode::Automatic);
+    }
   } else if (strcmp(action, "schedule") == 0) {
     _schedule.loadWindows(cmd["windows"].as<JsonArrayConst>());
   }

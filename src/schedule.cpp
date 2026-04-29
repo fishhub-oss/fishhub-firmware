@@ -11,40 +11,54 @@ uint16_t Schedule::parseMinutes(const char* hhmm) {
 
 void Schedule::loadWindows(JsonArrayConst windows) {
   _windows.clear();
-  _overridden = false;
-  for (JsonArrayConst pair : windows) {
-    if (pair.size() < 2) continue;
-    const char* on  = pair[0].as<const char*>();
-    const char* off = pair[1].as<const char*>();
-    if (!on || !off) continue;
-    _windows.push_back({parseMinutes(on), parseMinutes(off)});
+  for (JsonObjectConst w : windows) {
+    const char* from = w["from"];
+    const char* to   = w["to"];
+    if (!from || !to) continue;
+
+    uint8_t days = 0;
+    JsonArrayConst daysArr = w["days"];
+    if (!daysArr.isNull()) {
+      for (int d : daysArr) {
+        if (d >= 1 && d <= 7) {
+          // 1=Mon → bit0, 7=Sun → bit6
+          days |= (1 << (d - 1));
+        }
+      }
+    }
+
+    float value = w["value"] | 1.0f;
+    _windows.push_back({days, parseMinutes(from), parseMinutes(to), value});
   }
 }
 
-bool Schedule::isActive(time_t now) const {
-  if (_overridden) return _overrideState;
+float Schedule::activeValue(time_t now) const {
+  if (_mode == ControlMode::Manual) return _overrideValue;
 
   struct tm t;
-#ifdef ARDUINO
   localtime_r(&now, &t);
-#else
-  localtime_r(&now, &t);
-#endif
+
+  // tm_wday: 0=Sun, 1=Mon … 6=Sat → map to bit0=Mon … bit6=Sun
+  uint8_t dayBit = (t.tm_wday == 0) ? (1 << 6) : (1 << (t.tm_wday - 1));
   uint16_t cur = (uint16_t)(t.tm_hour * 60 + t.tm_min);
 
   for (const auto& w : _windows) {
-    if (w.onMinutes <= w.offMinutes) {
-      // Normal window (e.g. 08:00–22:00)
-      if (cur >= w.onMinutes && cur < w.offMinutes) return true;
+    if (w.days != 0 && !(w.days & dayBit)) continue;
+
+    if (w.fromMinutes <= w.toMinutes) {
+      if (cur >= w.fromMinutes && cur < w.toMinutes) return w.value;
     } else {
       // Overnight window (e.g. 22:00–06:00)
-      if (cur >= w.onMinutes || cur < w.offMinutes) return true;
+      if (cur >= w.fromMinutes || cur < w.toMinutes) return w.value;
     }
   }
-  return false;
+  return 0.0f;
 }
 
-void Schedule::setOverride(bool state) {
-  _overridden    = true;
-  _overrideState = state;
+void Schedule::setManualValue(float value) {
+  _overrideValue = value;
+}
+
+void Schedule::setControlMode(ControlMode mode) {
+  _mode = mode;
 }

@@ -23,11 +23,10 @@ static void tickAndAppend(RelayActuator& relay, bool triggerChange,
   JsonArray arr = doc.to<JsonArray>();
 
   if (triggerChange) {
-    // Apply an override to flip state, then advance time just enough that
-    // tick() sees a change.
+    // set with a value implicitly enters Manual mode and flips state ON.
     JsonDocument cmd;
     cmd["action"] = "set";
-    cmd["state"]  = true;
+    cmd["value"]  = 1.0f;
     relay.applyCommand(cmd.as<JsonObjectConst>());
   }
 
@@ -44,10 +43,10 @@ void test_state_change_emits_change_source(void) {
   RelayActuator relay("light", 1);
   relay.begin();
 
-  // Override to ON → tick sees a state change.
+  // set with a value implicitly enters Manual mode and flips state ON.
   JsonDocument cmd;
   cmd["action"] = "set";
-  cmd["state"]  = true;
+  cmd["value"]  = 1.0f;
   relay.applyCommand(cmd.as<JsonObjectConst>());
 
   time_t t = T0 + ACTUATOR_HEARTBEAT_S;

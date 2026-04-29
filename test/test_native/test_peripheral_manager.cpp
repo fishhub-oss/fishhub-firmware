@@ -133,12 +133,14 @@ void test_dispatch_command_routes_by_name(void) {
 // ── Schedule tests ───────────────────────────────────────────────────────────
 
 // All schedule tests run with TZ=UTC so localtime_r matches the UTC timestamps.
-// 2024-01-10 10:00:00 UTC
+// 2024-01-10 10:00:00 UTC  (Wednesday)
 static const time_t T_10_00 = 1704880800;
-// 2024-01-10 23:00:00 UTC
+// 2024-01-10 23:00:00 UTC  (Wednesday)
 static const time_t T_23_00 = 1704924000;
-// 2024-01-10 03:00:00 UTC
+// 2024-01-10 03:00:00 UTC  (Wednesday)
 static const time_t T_03_00 = 1704848400;
+// 2024-01-13 10:00:00 UTC  (Saturday)
+static const time_t T_SAT_10_00 = 1705140000;
 
 static Schedule makeSchedule(const char* json) {
   JsonDocument doc;
@@ -150,52 +152,94 @@ static Schedule makeSchedule(const char* json) {
 
 void test_schedule_no_windows_inactive() {
   Schedule s;
-  TEST_ASSERT_FALSE(s.isActive(T_10_00));
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, s.activeValue(T_10_00));
 }
 
 void test_schedule_normal_window_inside() {
-  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
-  TEST_ASSERT_TRUE(s.isActive(T_10_00));
+  Schedule s = makeSchedule(R"([{"from":"08:00","to":"22:00","value":1.0}])");
+  TEST_ASSERT_EQUAL_FLOAT(1.0f, s.activeValue(T_10_00));
 }
 
 void test_schedule_normal_window_outside() {
-  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
-  TEST_ASSERT_FALSE(s.isActive(T_23_00));
+  Schedule s = makeSchedule(R"([{"from":"08:00","to":"22:00","value":1.0}])");
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, s.activeValue(T_23_00));
 }
 
 void test_schedule_overnight_after_on() {
-  Schedule s = makeSchedule("[[\"22:00\",\"06:00\"]]");
-  TEST_ASSERT_TRUE(s.isActive(T_23_00));
+  Schedule s = makeSchedule(R"([{"from":"22:00","to":"06:00","value":1.0}])");
+  TEST_ASSERT_EQUAL_FLOAT(1.0f, s.activeValue(T_23_00));
 }
 
 void test_schedule_overnight_before_off() {
-  Schedule s = makeSchedule("[[\"22:00\",\"06:00\"]]");
-  TEST_ASSERT_TRUE(s.isActive(T_03_00));
+  Schedule s = makeSchedule(R"([{"from":"22:00","to":"06:00","value":1.0}])");
+  TEST_ASSERT_EQUAL_FLOAT(1.0f, s.activeValue(T_03_00));
 }
 
 void test_schedule_overnight_outside() {
-  Schedule s = makeSchedule("[[\"22:00\",\"06:00\"]]");
-  TEST_ASSERT_FALSE(s.isActive(T_10_00));
+  Schedule s = makeSchedule(R"([{"from":"22:00","to":"06:00","value":1.0}])");
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, s.activeValue(T_10_00));
 }
 
-void test_schedule_override_true() {
-  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
-  s.setOverride(true);
-  TEST_ASSERT_TRUE(s.isActive(T_23_00));
+void test_schedule_override_on() {
+  Schedule s = makeSchedule(R"([{"from":"08:00","to":"22:00","value":1.0}])");
+  s.setManualValue(1.0f);
+  s.setControlMode(ControlMode::Manual);
+  TEST_ASSERT_EQUAL_FLOAT(1.0f, s.activeValue(T_23_00));
 }
 
-void test_schedule_override_false() {
-  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
-  s.setOverride(false);
-  TEST_ASSERT_FALSE(s.isActive(T_10_00));
+void test_schedule_override_off() {
+  Schedule s = makeSchedule(R"([{"from":"08:00","to":"22:00","value":1.0}])");
+  s.setManualValue(0.0f);
+  s.setControlMode(ControlMode::Manual);
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, s.activeValue(T_10_00));
 }
 
 void test_schedule_load_clears_override() {
-  Schedule s = makeSchedule("[[\"08:00\",\"22:00\"]]");
-  s.setOverride(false);
+  Schedule s = makeSchedule(R"([{"from":"08:00","to":"22:00","value":1.0}])");
+  s.setControlMode(ControlMode::Manual);
+  // loadWindows must NOT clear manual mode
   JsonDocument empty;
   s.loadWindows(empty.as<JsonArrayConst>());
-  TEST_ASSERT_FALSE(s.hasOverride());
+  TEST_ASSERT_TRUE(s.hasOverride());
+}
+
+void test_schedule_day_of_week_inactive_on_weekend() {
+  // days:[1,2,3,4,5] = Mon–Fri only; T_SAT_10_00 is Saturday
+  Schedule s = makeSchedule(R"([{"days":[1,2,3,4,5],"from":"08:00","to":"22:00","value":1.0}])");
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, s.activeValue(T_SAT_10_00));
+}
+
+void test_schedule_day_of_week_active_on_weekday() {
+  // Same window, but T_10_00 is Wednesday — should be active
+  Schedule s = makeSchedule(R"([{"days":[1,2,3,4,5],"from":"08:00","to":"22:00","value":1.0}])");
+  TEST_ASSERT_EQUAL_FLOAT(1.0f, s.activeValue(T_10_00));
+}
+
+void test_schedule_manual_holds_after_load_windows() {
+  Schedule s = makeSchedule(R"([{"from":"08:00","to":"22:00","value":1.0}])");
+  s.setManualValue(0.0f);
+  s.setControlMode(ControlMode::Manual);
+  TEST_ASSERT_EQUAL(ControlMode::Manual, s.controlMode());
+
+  // Push a new schedule — must not revert to automatic
+  JsonDocument doc;
+  deserializeJson(doc, R"([{"from":"00:00","to":"23:59","value":1.0}])");
+  s.loadWindows(doc.as<JsonArrayConst>());
+
+  TEST_ASSERT_EQUAL(ControlMode::Manual, s.controlMode());
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, s.activeValue(T_10_00));
+}
+
+void test_schedule_automatic_mode_clears_override() {
+  Schedule s = makeSchedule(R"([{"from":"08:00","to":"22:00","value":1.0}])");
+  s.setManualValue(0.0f);
+  s.setControlMode(ControlMode::Manual);
+  TEST_ASSERT_EQUAL(ControlMode::Manual, s.controlMode());
+
+  s.setControlMode(ControlMode::Automatic);
+  TEST_ASSERT_EQUAL(ControlMode::Automatic, s.controlMode());
+  // Should now follow the schedule — T_10_00 is inside 08:00–22:00
+  TEST_ASSERT_EQUAL_FLOAT(1.0f, s.activeValue(T_10_00));
 }
 
 // ── PeripheralManager remove / has ───────────────────────────────────────────
@@ -252,9 +296,13 @@ int main(void) {
   RUN_TEST(test_schedule_overnight_after_on);
   RUN_TEST(test_schedule_overnight_before_off);
   RUN_TEST(test_schedule_overnight_outside);
-  RUN_TEST(test_schedule_override_true);
-  RUN_TEST(test_schedule_override_false);
+  RUN_TEST(test_schedule_override_on);
+  RUN_TEST(test_schedule_override_off);
   RUN_TEST(test_schedule_load_clears_override);
+  RUN_TEST(test_schedule_day_of_week_inactive_on_weekend);
+  RUN_TEST(test_schedule_day_of_week_active_on_weekday);
+  RUN_TEST(test_schedule_manual_holds_after_load_windows);
+  RUN_TEST(test_schedule_automatic_mode_clears_override);
   RUN_TEST(test_manager_remove);
   RUN_TEST(test_manager_has);
   RUN_TEST(test_manager_add_after_begin_calls_begin);
