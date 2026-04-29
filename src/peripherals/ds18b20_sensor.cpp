@@ -1,8 +1,8 @@
 #include "ds18b20_sensor.h"
 #include <Arduino.h>
 
-DS18B20Sensor::DS18B20Sensor(uint8_t pin, uint32_t intervalMs)
-  : _ow(pin), _sensors(&_ow), _lastTemp(0.0f), _intervalMs(intervalMs) {}
+DS18B20Sensor::DS18B20Sensor(std::string name, uint8_t pin, uint32_t intervalMs)
+  : _name(std::move(name)), _ow(pin), _sensors(&_ow), _lastTemp(0.0f), _intervalMs(intervalMs) {}
 
 void DS18B20Sensor::begin() {
   _sensors.begin();
@@ -23,7 +23,8 @@ bool DS18B20Sensor::tick(time_t /*now*/) {
 
 void DS18B20Sensor::appendSenML(JsonArray& records, time_t /*now*/) {
   JsonObject r = records.add<JsonObject>();
-  r["n"] = "temperature";
+  String n = String(_name.c_str()) + "/temperature";
+  r["n"] = n;
   r["u"] = "Cel";
   r["v"] = _lastTemp;
 }

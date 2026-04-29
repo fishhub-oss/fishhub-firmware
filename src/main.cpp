@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include "pins.h"
 #include "nvs_store.h"
 #include "provisioning.h"
@@ -7,10 +8,7 @@
 #include "mqtt_client.h"
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
-
-#ifndef DS18B20_INTERVAL_MS
-#define DS18B20_INTERVAL_MS 30000
-#endif
+#include "peripherals/relay_actuator.h"
 
 static PeripheralManager manager;
 static FishHubMqttClient mqttClient;
@@ -24,7 +22,7 @@ static void boot()
 
   Serial.println("NVS key status:");
   for (const char *key : {"wifi_ssid", "wifi_pass", "device_id", "device_jwt",
-                           "mqtt_username", "mqtt_host", "provisioned"})
+                          "mqtt_username", "mqtt_host", "provisioned"})
   {
     Serial.printf("  NVS %-14s %s\n", key,
                   nvsStore.get(key).isEmpty() ? "MISSING" : "present");
@@ -43,11 +41,40 @@ static void connectToWifi()
   waitForNtp();
 }
 
+// Restore peripherals persisted in NVS so the device is functional
+// immediately on boot, before retained MQTT messages are re-delivered.
+static void restorePeripherals()
+{
+  String json = nvsStore.get("peripherals");
+  if (json.isEmpty()) return;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, json)) {
+    Serial.println("NVS: failed to parse peripherals JSON — skipping restore");
+    return;
+  }
+
+  JsonArray arr = doc.as<JsonArray>();
+  for (JsonObject p : arr) {
+    const char* name = p["name"];
+    const char* kind = p["kind"];
+    int pin          = p["pin"] | -1;
+    if (!name || !kind || pin < 0) continue;
+
+    if (strcmp(kind, "ds18b20") == 0) {
+      manager.add(new DS18B20Sensor(name, (uint8_t)pin), "ds18b20", pin);
+      Serial.printf("NVS: restored ds18b20 '%s' on pin %d\n", name, pin);
+    } else if (strcmp(kind, "relay") == 0) {
+      manager.add(new RelayActuator(name, (uint8_t)pin), "relay", pin);
+      Serial.printf("NVS: restored relay '%s' on pin %d\n", name, pin);
+    }
+  }
+}
+
 static void normalOperation()
 {
-  manager.add(new DS18B20Sensor(ONE_WIRE_PIN, DS18B20_INTERVAL_MS));
+  restorePeripherals();
   manager.beginAll();
-  // RelayActuator instances are registered dynamically via MQTT peripheral config
   mqttClient.begin(manager);
 }
 

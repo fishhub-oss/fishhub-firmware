@@ -9,6 +9,7 @@ using String = std::string;
 #endif
 
 #include <ArduinoJson.h>
+#include <functional>
 #include <vector>
 #include <time.h>
 #include "peripheral.h"
@@ -16,6 +17,8 @@ using String = std::string;
 struct PeripheralEntry {
   Peripheral* peripheral;
   uint32_t    lastTickedAt;
+  const char* kind = nullptr;
+  int         pin  = -1;
 };
 
 class PeripheralManager {
@@ -23,7 +26,10 @@ public:
   // Adds a peripheral. If beginAll() has already been called, begin() is
   // invoked immediately so late-registered peripherals are initialised.
   // Ownership of the pointer is transferred — remove() will delete it.
-  void add(Peripheral* p);
+  void add(Peripheral* p, const char* kind = nullptr, int pin = -1);
+
+  // Iterates all entries, calling fn(peripheral, kind, pin) for each.
+  void forEach(std::function<void(Peripheral*, const char*, int)> fn) const;
   void beginAll();
 
   // Removes the peripheral with the given name and deletes the object.

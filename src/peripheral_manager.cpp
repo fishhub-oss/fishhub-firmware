@@ -4,9 +4,20 @@
 // millis() not available on native — callers always inject nowMs
 #endif
 
-void PeripheralManager::add(Peripheral* p) {
-  _entries.push_back({p, 0});
+void PeripheralManager::add(Peripheral* p, const char* kind, int pin) {
+  PeripheralEntry e;
+  e.peripheral   = p;
+  e.lastTickedAt = 0;
+  e.kind         = kind;
+  e.pin          = pin;
+  _entries.push_back(e);
   if (_begun) p->begin();
+}
+
+void PeripheralManager::forEach(std::function<void(Peripheral*, const char*, int)> fn) const {
+  for (const auto& e : _entries) {
+    fn(e.peripheral, e.kind, e.pin);
+  }
 }
 
 void PeripheralManager::beginAll() {
