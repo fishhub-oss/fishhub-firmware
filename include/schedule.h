@@ -10,30 +10,42 @@
 #include <ArduinoJson.h>
 #include <vector>
 
+enum class ControlMode { Automatic, Manual };
+
 class Schedule {
 public:
-  // Parses an array of ["HH:MM","HH:MM"] window pairs.
-  // Clears any active override.
+  // Parses an array of {"from","to","value",?"days"} window objects.
+  // Does NOT change the current control mode.
   void loadWindows(JsonArrayConst windows);
 
-  // Returns true if now falls within any stored window.
-  // Handles overnight windows (e.g. 22:00–06:00) correctly.
-  bool isActive(time_t now) const;
+  // Returns _overrideValue if Manual, otherwise the value of the first matching
+  // window, or 0.0f if none match. Handles overnight windows correctly.
+  float activeValue(time_t now) const;
 
-  // Forces a fixed state regardless of windows until the next loadWindows() call.
-  void setOverride(bool state);
+  // Sets the held value used in Manual mode. Does not change the mode itself.
+  void  setManualValue(float value);
+  float manualValue() const { return _overrideValue; }
 
-  bool hasOverride() const { return _overridden; }
+  // Switches between Manual and Automatic. Does not change the held value.
+  void        setControlMode(ControlMode mode);
+  ControlMode controlMode() const { return _mode; }
+
+  bool hasOverride() const { return _mode == ControlMode::Manual; }
+
+  // Serialises the current window list into a JSON array (for NVS persistence).
+  void serializeWindows(JsonArray& out) const;
 
 private:
   struct Window {
-    uint16_t onMinutes;
-    uint16_t offMinutes;
+    uint8_t  days;        // bitmask bit0=Mon…bit6=Sun; 0 = every day
+    uint16_t fromMinutes;
+    uint16_t toMinutes;
+    float    value;
   };
 
   static uint16_t parseMinutes(const char* hhmm);
 
   std::vector<Window> _windows;
-  bool _overridden    = false;
-  bool _overrideState = false;
+  ControlMode         _mode          = ControlMode::Automatic;
+  float               _overrideValue = 0.0f;
 };
