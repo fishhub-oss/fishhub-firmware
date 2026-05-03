@@ -39,6 +39,14 @@ void connectWifi() {
 
 void waitForNtp() {
   configTime(0, 0, "pool.ntp.org");
+
+  String tz = nvsStore.readTimezone();
+  if (!tz.isEmpty()) {
+    setenv("TZ", tz.c_str(), 1);
+    tzset();
+    Serial.printf("NTP: applying stored timezone %s\n", tz.c_str());
+  }
+
   Serial.println("Waiting for NTP sync...");
 
   struct tm timeinfo;

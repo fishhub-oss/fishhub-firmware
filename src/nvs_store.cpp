@@ -22,6 +22,14 @@ void NVSStore::clear() {
   _prefs.clear();
 }
 
+String NVSStore::readTimezone() {
+  return get("timezone");
+}
+
+void NVSStore::writeTimezone(const String& tz) {
+  set("timezone", tz);
+}
+
 bool NVSStore::isProvisioned() {
   bool allKeys = get("wifi_ssid")     != "" &&
                  get("wifi_pass")     != "" &&
