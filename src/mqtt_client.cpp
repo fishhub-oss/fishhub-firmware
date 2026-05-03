@@ -99,9 +99,11 @@ void FishHubMqttClient::connect() {
 
   String cmdTopic         = "fishhub/" + _deviceId + "/commands/#";
   String peripheralsTopic = "fishhub/" + _deviceId + "/peripherals/#";
+  String configTopic      = "fishhub/" + _deviceId + "/config";
   _client.subscribe(cmdTopic.c_str());
   _client.subscribe(peripheralsTopic.c_str());
-  Serial.printf("MQTT: connected, subscribed to commands and peripherals topics\n");
+  _client.subscribe(configTopic.c_str());
+  Serial.printf("MQTT: connected, subscribed to commands, peripherals and config topics\n");
 }
 
 void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) {
@@ -109,8 +111,14 @@ void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) 
   String prefix = "fishhub/" + _deviceId + "/";
   if (!t.startsWith(prefix)) return;
 
-  String rest  = t.substring(prefix.length()); // e.g. "commands/light" or "peripherals/light"
-  int slash    = rest.indexOf('/');
+  String rest  = t.substring(prefix.length()); // e.g. "commands/light", "peripherals/light", "config"
+
+  if (rest == "config") {
+    onConfig(payload, len);
+    return;
+  }
+
+  int slash = rest.indexOf('/');
   if (slash < 0) return;
 
   String segment = rest.substring(0, slash);
@@ -183,6 +191,27 @@ bool FishHubMqttClient::publishReading(const String& payload) {
   bool ok = _client.publish(topic.c_str(), payload.c_str(), false);
   if (!ok) Serial.println("MQTT: publishReading failed");
   return ok;
+}
+
+void FishHubMqttClient::onConfig(byte* payload, unsigned int len) {
+  if (len == 0) return;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len)) {
+    Serial.println("MQTT: bad JSON on config topic");
+    return;
+  }
+
+  const char* tz = doc["timezone"];
+  if (!tz || strlen(tz) == 0) {
+    Serial.println("MQTT: config message missing 'timezone' — ignored");
+    return;
+  }
+
+  nvsStore.writeTimezone(String(tz));
+  setenv("TZ", tz, 1);
+  tzset();
+  Serial.printf("MQTT: timezone set to %s\n", tz);
 }
 
 void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, unsigned int len) {

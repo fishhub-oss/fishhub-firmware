@@ -14,6 +14,7 @@ public:
 private:
   void connect();
   void onMessage(char* topic, byte* payload, unsigned int len);
+  void onConfig(byte* payload, unsigned int len);
   void onPeripheralConfig(const String& name, byte* payload, unsigned int len);
 
   WiFiClientSecure   _tlsClient;
