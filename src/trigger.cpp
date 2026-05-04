@@ -1,4 +1,5 @@
 #include "trigger.h"
+#include "peripheral_manager.h"
 #include <cmath>
 #include <cstring>
 
@@ -93,5 +94,5 @@ float Trigger::evalNode(JsonObjectConst node,
 
 void Trigger::applyTo(PeripheralManager& mgr) const {
   if (_targetPeripheral.empty()) return;
-  mgr.dispatchCommand(String(_targetPeripheral), _actionDoc.as<JsonObjectConst>());
+  mgr.dispatchCommand(String(_targetPeripheral.c_str()), _actionDoc.as<JsonObjectConst>());
 }

@@ -21,6 +21,10 @@ bool DS18B20Sensor::tick(time_t /*now*/) {
   return true;
 }
 
+void DS18B20Sensor::currentMeasurements(std::map<std::string, float>& out) const {
+  out[std::string(_name) + "/temperature"] = _lastTemp;
+}
+
 void DS18B20Sensor::appendSenML(JsonArray& records, time_t /*now*/) {
   JsonObject r = records.add<JsonObject>();
   String n = String(_name.c_str()) + "/temperature";

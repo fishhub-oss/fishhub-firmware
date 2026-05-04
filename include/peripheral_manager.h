@@ -13,6 +13,7 @@ using String = std::string;
 #include <vector>
 #include <time.h>
 #include "peripheral.h"
+#include "trigger.h"
 
 struct PeripheralEntry {
   Peripheral* peripheral;
@@ -49,7 +50,17 @@ public:
   // Returns the peripheral with the given name, or nullptr if not found.
   Peripheral* find(const String& name) const;
 
+  // Adds a trigger. Ownership is transferred — removeTrigger() will delete it.
+  void     addTrigger(Trigger* t);
+
+  // Removes the trigger with the given id and deletes the object.
+  void     removeTrigger(const std::string& id);
+
+  // Returns the trigger with the given id, or nullptr if not found.
+  Trigger* findTrigger(const std::string& id) const;
+
 private:
   std::vector<PeripheralEntry> _entries;
+  std::vector<Trigger*>        _triggers;
   bool _begun = false;
 };

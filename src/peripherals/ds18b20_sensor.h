@@ -17,6 +17,7 @@ public:
   uint32_t    intervalMs() const override { return _intervalMs; }
   bool        tick(time_t now) override;
   void        appendSenML(JsonArray& records, time_t now) override;
+  void        currentMeasurements(std::map<std::string, float>& out) const override;
   const char* name() const override { return _name.c_str(); }
 
 private:

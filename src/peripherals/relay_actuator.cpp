@@ -44,6 +44,10 @@ void RelayActuator::appendSenML(JsonArray& records, time_t /*now*/) {
   src["vs"] = _lastChanged ? "change" : "heartbeat";
 }
 
+void RelayActuator::currentMeasurements(std::map<std::string, float>& out) const {
+  out[_name + "/state"] = _currentState ? 1.0f : 0.0f;
+}
+
 void RelayActuator::applyCommand(JsonObjectConst cmd) {
   const char* action = cmd["action"];
   if (!action) return;

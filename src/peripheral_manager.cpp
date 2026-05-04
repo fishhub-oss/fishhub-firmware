@@ -56,6 +56,17 @@ String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
     }
   }
 
+  // Trigger evaluation pass — runs regardless of whether readings were produced
+  if (!_triggers.empty()) {
+    std::map<std::string, float> values;
+    for (const auto& e : _entries) {
+      e.peripheral->currentMeasurements(values);
+    }
+    for (auto* t : _triggers) {
+      t->evaluate(values, now, *this);
+    }
+  }
+
   if (!anyData) return String{};
 
   // Prepend base record now that we know there is data
@@ -86,6 +97,27 @@ void PeripheralManager::dispatchCommand(const String& name, JsonObjectConst cmd)
 Peripheral* PeripheralManager::find(const String& name) const {
   for (auto& e : _entries) {
     if (name == e.peripheral->name()) return e.peripheral;
+  }
+  return nullptr;
+}
+
+void PeripheralManager::addTrigger(Trigger* t) {
+  _triggers.push_back(t);
+}
+
+void PeripheralManager::removeTrigger(const std::string& id) {
+  for (auto it = _triggers.begin(); it != _triggers.end(); ++it) {
+    if ((*it)->id() == id) {
+      delete *it;
+      _triggers.erase(it);
+      return;
+    }
+  }
+}
+
+Trigger* PeripheralManager::findTrigger(const std::string& id) const {
+  for (auto* t : _triggers) {
+    if (t->id() == id) return t;
   }
   return nullptr;
 }
