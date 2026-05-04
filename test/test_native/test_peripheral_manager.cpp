@@ -1,17 +1,20 @@
 #include <unity.h>
 #include <ArduinoJson.h>
 #include <cstdlib>
+#include <map>
+#include <string>
 #include "peripheral_manager.h"
 #include "schedule.h"
 #include "../../src/peripheral_manager.cpp"
 #include "../../src/schedule.cpp"
+#include "../../src/trigger.cpp"
 
 // ── mock peripheral ──────────────────────────────────────────────────────────
 
 class MockPeripheral : public Peripheral {
 public:
-  explicit MockPeripheral(const char* n, uint32_t interval)
-    : _name(n), _interval(interval), tickCount(0), lastCmd("") {}
+  explicit MockPeripheral(const char* n, uint32_t interval, float value = 0.0f)
+    : _name(n), _interval(interval), tickCount(0), lastCmd(""), _value(value) {}
 
   void        begin() override {}
   uint32_t    intervalMs() const override { return _interval; }
@@ -32,8 +35,13 @@ public:
     lastCmd = cmd["action"].as<String>();
   }
 
+  void currentMeasurements(std::map<std::string, float>& out) const override {
+    out[std::string(_name) + "/value"] = _value;
+  }
+
   int    tickCount;
   String lastCmd;
+  float  _value;
 
 private:
   const char* _name;
@@ -274,6 +282,143 @@ void test_manager_add_after_begin_calls_begin(void) {
   mgr.remove("late");
 }
 
+// ── Trigger integration ───────────────────────────────────────────────────────
+
+static Trigger* makeTrigger(const char* id, const char* condJson,
+                             const char* target, bool enabled = true) {
+  std::string json = R"({"id":")";
+  json += id;
+  json += R"(","enabled":)";
+  json += enabled ? "true" : "false";
+  json += R"(,"target":")";
+  json += target;
+  json += R"(","cooldown_s":0,)";
+  json += R"("action":{"action":"set","value":1.0},)";
+  json += R"("condition":)";
+  json += condJson;
+  json += "}";
+
+  JsonDocument* doc = new JsonDocument();
+  deserializeJson(*doc, json.c_str());
+  Trigger* t = new Trigger();
+  t->load(doc->as<JsonObjectConst>());
+  delete doc;
+  return t;
+}
+
+void test_trigger_add_find_remove(void) {
+  PeripheralManager mgr;
+  Trigger* t = makeTrigger("t1", R"({"op":"literal","value":1})", "relay");
+  mgr.addTrigger(t);
+  TEST_ASSERT_NOT_NULL(mgr.findTrigger("t1"));
+  mgr.removeTrigger("t1");
+  TEST_ASSERT_NULL(mgr.findTrigger("t1"));
+}
+
+void test_trigger_fires_when_condition_met(void) {
+  PeripheralManager mgr;
+  // Sensor reports 15.0 — trigger fires when value < 19.0
+  MockPeripheral* sensor = new MockPeripheral("temp", 1000, 15.0f);
+  MockPeripheral* relay  = new MockPeripheral("relay", 1000);
+  mgr.add(sensor);
+  mgr.add(relay);
+  mgr.beginAll();
+
+  Trigger* t = makeTrigger("t1",
+    R"({"op":"lt","left":{"op":"value","measurement":"temp/value"},"right":{"op":"literal","value":19.0}})",
+    "relay");
+  mgr.addTrigger(t);
+
+  mgr.tickAll(1000, 1000);
+  TEST_ASSERT_EQUAL_STRING("set", relay->lastCmd.c_str());
+
+  mgr.remove("temp");
+  mgr.remove("relay");
+}
+
+void test_trigger_does_not_fire_when_condition_false(void) {
+  PeripheralManager mgr;
+  // Sensor reports 25.0 — trigger does NOT fire when value < 19.0
+  MockPeripheral* sensor = new MockPeripheral("temp", 1000, 25.0f);
+  MockPeripheral* relay  = new MockPeripheral("relay", 1000);
+  mgr.add(sensor);
+  mgr.add(relay);
+  mgr.beginAll();
+
+  Trigger* t = makeTrigger("t1",
+    R"({"op":"lt","left":{"op":"value","measurement":"temp/value"},"right":{"op":"literal","value":19.0}})",
+    "relay");
+  mgr.addTrigger(t);
+
+  mgr.tickAll(1000, 1000);
+  TEST_ASSERT_EQUAL_STRING("", relay->lastCmd.c_str());
+
+  mgr.remove("temp");
+  mgr.remove("relay");
+}
+
+void test_trigger_respects_cooldown(void) {
+  PeripheralManager mgr;
+  MockPeripheral* sensor = new MockPeripheral("temp", 1000, 15.0f);
+  MockPeripheral* relay  = new MockPeripheral("relay", 1000);
+  mgr.add(sensor);
+  mgr.add(relay);
+  mgr.beginAll();
+
+  std::string json = R"({"id":"t1","enabled":true,"target":"relay","cooldown_s":10,)"
+                     R"("action":{"action":"set","value":1.0},)"
+                     R"("condition":{"op":"lt","left":{"op":"value","measurement":"temp/value"},)"
+                     R"("right":{"op":"literal","value":19.0}}})";
+  JsonDocument doc;
+  deserializeJson(doc, json.c_str());
+  Trigger* t = new Trigger();
+  t->load(doc.as<JsonObjectConst>());
+  mgr.addTrigger(t);
+
+  // First tick at t=1 — fires
+  mgr.tickAll(1, 1000);
+  TEST_ASSERT_EQUAL_STRING("set", relay->lastCmd.c_str());
+
+  // Reset lastCmd and tick at t=5 (within 10s cooldown) — must NOT fire
+  relay->lastCmd = "";
+  mgr.tickAll(5, 2000);
+  TEST_ASSERT_EQUAL_STRING("", relay->lastCmd.c_str());
+
+  // Tick at t=12 (past cooldown) — fires again
+  mgr.tickAll(12, 3000);
+  TEST_ASSERT_EQUAL_STRING("set", relay->lastCmd.c_str());
+
+  mgr.remove("temp");
+  mgr.remove("relay");
+}
+
+void test_trigger_disabled_does_not_fire(void) {
+  PeripheralManager mgr;
+  MockPeripheral* sensor = new MockPeripheral("temp", 1000, 15.0f);
+  MockPeripheral* relay  = new MockPeripheral("relay", 1000);
+  mgr.add(sensor);
+  mgr.add(relay);
+  mgr.beginAll();
+
+  Trigger* t = makeTrigger("t1",
+    R"({"op":"lt","left":{"op":"value","measurement":"temp/value"},"right":{"op":"literal","value":19.0}})",
+    "relay", false);
+  mgr.addTrigger(t);
+
+  mgr.tickAll(1000, 1000);
+  TEST_ASSERT_EQUAL_STRING("", relay->lastCmd.c_str());
+
+  mgr.remove("temp");
+  mgr.remove("relay");
+}
+
+void test_current_measurements_populates_map(void) {
+  MockPeripheral p("sensor", 1000, 42.5f);
+  std::map<std::string, float> values;
+  p.currentMeasurements(values);
+  TEST_ASSERT_EQUAL_FLOAT(42.5f, values["sensor/value"]);
+}
+
 // ── entry point ──────────────────────────────────────────────────────────────
 
 void setUp(void) {}
@@ -306,5 +451,11 @@ int main(void) {
   RUN_TEST(test_manager_remove);
   RUN_TEST(test_manager_has);
   RUN_TEST(test_manager_add_after_begin_calls_begin);
+  RUN_TEST(test_trigger_add_find_remove);
+  RUN_TEST(test_trigger_fires_when_condition_met);
+  RUN_TEST(test_trigger_does_not_fire_when_condition_false);
+  RUN_TEST(test_trigger_respects_cooldown);
+  RUN_TEST(test_trigger_disabled_does_not_fire);
+  RUN_TEST(test_current_measurements_populates_map);
   return UNITY_END();
 }

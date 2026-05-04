@@ -9,6 +9,8 @@ using String = std::string;
 #endif
 
 #include <ArduinoJson.h>
+#include <map>
+#include <string>
 #include <time.h>
 
 class Peripheral {
@@ -34,6 +36,11 @@ public:
   // One-shot peripherals (feeder, doser) override to false — the MQTT client will
   // deduplicate by persisting the last processed command ID in NVS.
   virtual bool replayCommand() const { return true; }
+
+  // Populates `out` with current measurement values keyed by SenML name
+  // (e.g. "ds18b20-4/temperature"). Called each tick cycle to build the
+  // snapshot used by trigger evaluation. Default: no-op.
+  virtual void currentMeasurements(std::map<std::string, float>& out) const {}
 
   // Unique name — used as MQTT topic segment and SenML field name prefix.
   virtual const char* name() const = 0;

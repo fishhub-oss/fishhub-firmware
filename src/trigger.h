@@ -11,7 +11,9 @@ using String = std::string;
 #include <ArduinoJson.h>
 #include <map>
 #include <time.h>
-#include "peripheral_manager.h"
+
+// Forward declaration to avoid circular include with peripheral_manager.h
+class PeripheralManager;
 
 class Trigger {
 public:
