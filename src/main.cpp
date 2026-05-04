@@ -27,12 +27,32 @@ static State         errorNextState  = State::CONNECT_WIFI;
 
 static const unsigned long ERROR_RETRY_DELAY_MS = 10000;
 
+static const char *stateName(State s)
+{
+  switch (s) {
+    case State::PROVISIONING:      return "PROVISIONING";
+    case State::CONNECT_WIFI:      return "CONNECT_WIFI";
+    case State::NTP_SYNC:          return "NTP_SYNC";
+    case State::NORMAL_OPERATION:  return "NORMAL_OPERATION";
+    case State::ERROR_RETRY:       return "ERROR_RETRY";
+  }
+  return "UNKNOWN";
+}
+
+static void setState(State next)
+{
+  if (next != state) {
+    Serial.printf("State: %s → %s\n", stateName(state), stateName(next));
+    state = next;
+  }
+}
+
 static void enterErrorRetry(State next, const char *reason)
 {
   Serial.printf("Error: %s — retrying in %lu s\n", reason, ERROR_RETRY_DELAY_MS / 1000);
   errorRetryUntil = millis() + ERROR_RETRY_DELAY_MS;
   errorNextState  = next;
-  state           = State::ERROR_RETRY;
+  setState(State::ERROR_RETRY);
 }
 
 // ─── normal operation helpers ─────────────────────────────────────────────────
@@ -97,7 +117,7 @@ static void runState()
 
     case State::CONNECT_WIFI:
       if (connectWifi()) {
-        state = State::NTP_SYNC;
+        setState(State::NTP_SYNC);
       } else {
         enterErrorRetry(State::CONNECT_WIFI, "Wi-Fi connection failed");
       }
@@ -105,7 +125,7 @@ static void runState()
 
     case State::NTP_SYNC:
       if (waitForNtp()) {
-        state = State::NORMAL_OPERATION;
+        setState(State::NORMAL_OPERATION);
       } else {
         enterErrorRetry(State::CONNECT_WIFI, "NTP sync failed");
       }
@@ -119,7 +139,7 @@ static void runState()
 
     case State::ERROR_RETRY:
       if (millis() >= errorRetryUntil)
-        state = errorNextState;
+        setState(errorNextState);
       break;
   }
 }
@@ -142,6 +162,7 @@ void setup()
   }
 
   state = nvsStore.isProvisioned() ? State::CONNECT_WIFI : State::PROVISIONING;
+  Serial.printf("State: initial → %s\n", stateName(state));
 }
 
 void loop()
