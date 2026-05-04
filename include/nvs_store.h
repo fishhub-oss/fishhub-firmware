@@ -10,6 +10,8 @@ public:
   void   remove(const char* key);
   void   clear();
   bool   isProvisioned();
+  String readTimezone();
+  void   writeTimezone(const String& tz);
 
 private:
   Preferences _prefs;
