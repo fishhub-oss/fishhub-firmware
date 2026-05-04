@@ -92,6 +92,16 @@ float Trigger::evalNode(JsonObjectConst node,
   return 0.0f;
 }
 
+void Trigger::serializeTo(JsonObject out) const {
+  out["op"]         = "upsert";
+  out["id"]         = _id.c_str();
+  out["enabled"]    = _enabled;
+  out["target"]     = _targetPeripheral.c_str();
+  out["cooldown_s"] = _cooldownS;
+  out["condition"]  = _condDoc.as<JsonObjectConst>();
+  out["action"]     = _actionDoc.as<JsonObjectConst>();
+}
+
 void Trigger::applyTo(PeripheralManager& mgr) const {
   if (_targetPeripheral.empty()) return;
   mgr.dispatchCommand(String(_targetPeripheral.c_str()), _actionDoc.as<JsonObjectConst>());

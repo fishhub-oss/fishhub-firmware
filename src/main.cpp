@@ -8,6 +8,7 @@
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
 #include "peripherals/relay_actuator.h"
+#include "trigger.h"
 #include "button.h"
 
 // ─── state machine ────────────────────────────────────────────────────────────
@@ -89,9 +90,43 @@ static void restorePeripherals()
   }
 }
 
+static void restoreTriggers()
+{
+  String idxJson = nvsStore.get("trig_index");
+  if (idxJson.isEmpty()) return;
+
+  JsonDocument idxDoc;
+  if (deserializeJson(idxDoc, idxJson)) {
+    Serial.println("NVS: failed to parse trig_index — skipping trigger restore");
+    return;
+  }
+
+  for (JsonVariant v : idxDoc.as<JsonArray>()) {
+    String prefix = v.as<String>();
+    String key    = String("tr_") + prefix;
+    String json   = nvsStore.get(key.c_str());
+    if (json.isEmpty()) continue;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, json)) {
+      Serial.printf("NVS: failed to parse trigger '%s' — skipping\n", prefix.c_str());
+      continue;
+    }
+
+    Trigger* t = new Trigger();
+    if (t->load(doc.as<JsonObjectConst>())) {
+      manager.addTrigger(t);
+      Serial.printf("NVS: restored trigger '%s'\n", t->id().c_str());
+    } else {
+      delete t;
+    }
+  }
+}
+
 static void initNormalOperation()
 {
   restorePeripherals();
+  restoreTriggers();
   manager.beginAll();
   mqttClient.begin(manager);
   normalOperationInitDone = true;

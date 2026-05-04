@@ -59,6 +59,9 @@ public:
   // Returns the trigger with the given id, or nullptr if not found.
   Trigger* findTrigger(const std::string& id) const;
 
+  // Iterates all triggers, calling fn(trigger) for each.
+  void forEachTrigger(std::function<void(Trigger*)> fn) const;
+
 private:
   std::vector<PeripheralEntry> _entries;
   std::vector<Trigger*>        _triggers;
