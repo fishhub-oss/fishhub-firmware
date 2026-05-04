@@ -9,7 +9,7 @@ static const int WIFI_TIMEOUT_MS  = 10000;
 static const int WIFI_MAX_RETRIES = 3;
 static const int NTP_TIMEOUT_MS   = 10000;
 
-void connectWifi() {
+bool connectWifi() {
   String ssid     = nvsStore.get("wifi_ssid");
   String password = nvsStore.get("wifi_pass");
   if (ssid.isEmpty())     ssid     = WIFI_SSID;
@@ -26,18 +26,18 @@ void connectWifi() {
 
     if (WiFi.status() == WL_CONNECTED) {
       Serial.printf("Wi-Fi connected — IP: %s\n", WiFi.localIP().toString().c_str());
-      return;
+      return true;
     }
 
     WiFi.disconnect(true);
     Serial.println("Wi-Fi attempt timed out");
   }
 
-  Serial.println("Wi-Fi connection failed after 3 attempts — halting");
-  while (true) delay(1000);
+  Serial.println("Wi-Fi connection failed after 3 attempts");
+  return false;
 }
 
-void waitForNtp() {
+bool waitForNtp() {
   configTime(0, 0, "pool.ntp.org");
 
   String tz = nvsStore.readTimezone();
@@ -56,11 +56,12 @@ void waitForNtp() {
   }
 
   if (!getLocalTime(&timeinfo)) {
-    Serial.println("NTP sync failed — halting");
-    while (true) delay(1000);
+    Serial.println("NTP sync failed");
+    return false;
   }
 
   char buf[32];
   strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S UTC", &timeinfo);
   Serial.printf("NTP synced: %s\n", buf);
+  return true;
 }
