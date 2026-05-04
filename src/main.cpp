@@ -8,40 +8,59 @@
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
 #include "peripherals/relay_actuator.h"
+#include "button.h"
 
-static PeripheralManager manager;
-static FishHubMqttClient mqttClient;
+// ─── state machine ────────────────────────────────────────────────────────────
 
-static void boot()
+enum class State {
+  PROVISIONING,
+  CONNECT_WIFI,
+  NTP_SYNC,
+  NORMAL_OPERATION,
+  ERROR_RETRY,
+};
+
+static State state;
+
+static unsigned long errorRetryUntil = 0;
+static State         errorNextState  = State::CONNECT_WIFI;
+
+static const unsigned long ERROR_RETRY_DELAY_MS = 10000;
+
+static const char *stateName(State s)
 {
-  Serial.begin(115200);
-  Serial.println("FishHub firmware booting...");
-  nvsStore.begin();
-  pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
+  switch (s) {
+    case State::PROVISIONING:      return "PROVISIONING";
+    case State::CONNECT_WIFI:      return "CONNECT_WIFI";
+    case State::NTP_SYNC:          return "NTP_SYNC";
+    case State::NORMAL_OPERATION:  return "NORMAL_OPERATION";
+    case State::ERROR_RETRY:       return "ERROR_RETRY";
+  }
+  return "UNKNOWN";
+}
 
-  Serial.println("NVS key status:");
-  for (const char *key : {"wifi_ssid", "wifi_pass", "device_id", "device_jwt",
-                          "mqtt_username", "mqtt_host", "provisioned"})
-  {
-    Serial.printf("  NVS %-14s %s\n", key,
-                  nvsStore.get(key).isEmpty() ? "MISSING" : "present");
+static void setState(State next)
+{
+  if (next != state) {
+    Serial.printf("State: %s → %s\n", stateName(state), stateName(next));
+    state = next;
   }
 }
 
-static void provisioningMode()
+static void enterErrorRetry(State next, const char *reason)
 {
-  Serial.println("Device not fully provisioned — entering provisioning mode");
-  startProvisioning(); // never returns — reboots on success, loops on error
+  Serial.printf("Error: %s — retrying in %lu s\n", reason, ERROR_RETRY_DELAY_MS / 1000);
+  errorRetryUntil = millis() + ERROR_RETRY_DELAY_MS;
+  errorNextState  = next;
+  setState(State::ERROR_RETRY);
 }
 
-static void connectToWifi()
-{
-  connectWifi();
-  waitForNtp();
-}
+// ─── normal operation helpers ─────────────────────────────────────────────────
 
-// Restore peripherals persisted in NVS so the device is functional
-// immediately on boot, before retained MQTT messages are re-delivered.
+static PeripheralManager manager;
+static FishHubMqttClient mqttClient;
+static bool normalOperationInitDone = false;
+
 static void restorePeripherals()
 {
   String json = nvsStore.get("peripherals");
@@ -70,41 +89,12 @@ static void restorePeripherals()
   }
 }
 
-static void normalOperation()
+static void initNormalOperation()
 {
   restorePeripherals();
   manager.beginAll();
   mqttClient.begin(manager);
-}
-
-static void handleButton()
-{
-  if (digitalRead(RESET_BUTTON_PIN) != LOW)
-    return;
-
-  Serial.println("Reset button pressed");
-  Serial.println("- 3s  => enter provisioning mode");
-  Serial.println("- 10s => clear all data");
-
-  unsigned long pressStart = millis();
-  while (digitalRead(RESET_BUTTON_PIN) == LOW)
-  {
-    Serial.printf("Held for %lu ms\n", millis() - pressStart);
-    delay(50);
-  }
-  unsigned long held = millis() - pressStart;
-
-  if (held >= 10000)
-  {
-    Serial.println("Button held 10s — clearing NVS and rebooting...");
-    nvsStore.clear();
-    ESP.restart();
-  }
-  else if (held >= 3000)
-  {
-    Serial.println("Button held 3s — entering reconfiguration mode...");
-    provisioningMode(); // never returns
-  }
+  normalOperationInitDone = true;
 }
 
 static void sensorTick()
@@ -116,17 +106,67 @@ static void sensorTick()
     mqttClient.publishReading(payload);
 }
 
+// ─── state dispatch ───────────────────────────────────────────────────────────
+
+static void runState()
+{
+  switch (state) {
+    case State::PROVISIONING:
+      startProvisioning(); // never returns — reboots on success
+      break;
+
+    case State::CONNECT_WIFI:
+      if (connectWifi()) {
+        setState(State::NTP_SYNC);
+      } else {
+        enterErrorRetry(State::CONNECT_WIFI, "Wi-Fi connection failed");
+      }
+      break;
+
+    case State::NTP_SYNC:
+      if (waitForNtp()) {
+        setState(State::NORMAL_OPERATION);
+      } else {
+        enterErrorRetry(State::CONNECT_WIFI, "NTP sync failed");
+      }
+      break;
+
+    case State::NORMAL_OPERATION:
+      if (!normalOperationInitDone)
+        initNormalOperation();
+      sensorTick();
+      break;
+
+    case State::ERROR_RETRY:
+      if (millis() >= errorRetryUntil)
+        setState(errorNextState);
+      break;
+  }
+}
+
+// ─── Arduino entry points ─────────────────────────────────────────────────────
+
 void setup()
 {
-  boot();
-  if (!nvsStore.isProvisioned())
-    provisioningMode();
-  connectToWifi();
-  normalOperation();
+  Serial.begin(115200);
+  Serial.println("FishHub firmware booting...");
+  nvsStore.begin();
+  pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
+
+  Serial.println("NVS key status:");
+  for (const char *key : {"wifi_ssid", "wifi_pass", "device_id", "device_jwt",
+                          "mqtt_username", "mqtt_host", "provisioned"})
+  {
+    Serial.printf("  NVS %-14s %s\n", key,
+                  nvsStore.get(key).isEmpty() ? "MISSING" : "present");
+  }
+
+  state = nvsStore.isProvisioned() ? State::CONNECT_WIFI : State::PROVISIONING;
+  Serial.printf("State: initial → %s\n", stateName(state));
 }
 
 void loop()
 {
-  handleButton();
-  sensorTick();
+  checkButton();
+  runState();
 }

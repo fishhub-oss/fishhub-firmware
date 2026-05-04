@@ -1,5 +1,6 @@
 #include "provisioning.h"
 #include "nvs_store.h"
+#include "button.h"
 #include "config.h"
 #include <WiFi.h>
 #include <WebServer.h>
@@ -12,6 +13,15 @@
 static SemaphoreHandle_t scanMutex;
 static std::vector<String> scannedSSIDs;
 static bool scanDone = false;
+
+static void buttonTask(void *)
+{
+  for (;;)
+  {
+    checkButton();
+    delay(50);
+  }
+}
 
 static void scanTask(void *)
 {
@@ -474,7 +484,8 @@ void startProvisioning()
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP("FishHub-Setup");
 
-  xTaskCreatePinnedToCore(scanTask, "wifi_scan", 4096, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(scanTask,   "wifi_scan", 4096, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(buttonTask, "btn_check", 2048, nullptr, 1, nullptr, 0);
   Serial.printf("AP started — SSID: FishHub-Setup  IP: %s\n",
                 WiFi.softAPIP().toString().c_str());
 
