@@ -121,3 +121,7 @@ Trigger* PeripheralManager::findTrigger(const std::string& id) const {
   }
   return nullptr;
 }
+
+void PeripheralManager::forEachTrigger(std::function<void(Trigger*)> fn) const {
+  for (auto* t : _triggers) fn(t);
+}

@@ -190,6 +190,54 @@ static void savePeripheralsToNVS(PeripheralManager* mgr) {
   nvsStore.set("peripherals", json);
 }
 
+// Returns "tr_" + first 10 chars of trigger id — fits the 15-char NVS key limit.
+static String triggerNvsKey(const std::string& id) {
+  return String("tr_") + id.substr(0, 10).c_str();
+}
+
+static void saveTriggerToNVS(Trigger* t) {
+  JsonDocument doc;
+  t->serializeTo(doc.as<JsonObject>());
+  String json;
+  serializeJson(doc, json);
+  nvsStore.set(triggerNvsKey(t->id()).c_str(), json);
+
+  String idxJson = nvsStore.get("trig_index");
+  JsonDocument idxDoc;
+  if (idxJson.isEmpty() || deserializeJson(idxDoc, idxJson)) {
+    idxDoc.to<JsonArray>();
+  }
+  JsonArray idx    = idxDoc.as<JsonArray>();
+  String    prefix = String(t->id().substr(0, 10).c_str());
+  for (JsonVariant v : idx) {
+    if (v.as<String>() == prefix) return;
+  }
+  idx.add(prefix);
+  String newIdx;
+  serializeJson(idxDoc, newIdx);
+  nvsStore.set("trig_index", newIdx);
+}
+
+static void removeTriggerFromNVS(const String& id) {
+  std::string sid = id.c_str();
+  nvsStore.remove(triggerNvsKey(sid).c_str());
+
+  String idxJson = nvsStore.get("trig_index");
+  if (idxJson.isEmpty()) return;
+  JsonDocument idxDoc;
+  if (deserializeJson(idxDoc, idxJson)) return;
+
+  String       prefix = String(sid.substr(0, 10).c_str());
+  JsonDocument newDoc;
+  JsonArray    dst    = newDoc.to<JsonArray>();
+  for (JsonVariant v : idxDoc.as<JsonArray>()) {
+    if (v.as<String>() != prefix) dst.add(v);
+  }
+  String newIdx;
+  serializeJson(newDoc, newIdx);
+  nvsStore.set("trig_index", newIdx);
+}
+
 bool FishHubMqttClient::publishReading(const String& payload) {
   if (!_client.connected()) {
     Serial.println("MQTT: not connected — skipping publish");
@@ -280,6 +328,7 @@ void FishHubMqttClient::onTriggerConfig(const String& id, byte* payload, unsigne
 
   if (strcmp(op, "delete") == 0) {
     _manager->removeTrigger(id.c_str());
+    removeTriggerFromNVS(id);
     Serial.printf("MQTT: removed trigger '%s'\n", id.c_str());
     return;
   }
@@ -295,6 +344,7 @@ void FishHubMqttClient::onTriggerConfig(const String& id, byte* payload, unsigne
       _manager->addTrigger(t);
       Serial.printf("MQTT: registered trigger '%s'\n", id.c_str());
     }
+    saveTriggerToNVS(_manager->findTrigger(id.c_str()));
     return;
   }
 

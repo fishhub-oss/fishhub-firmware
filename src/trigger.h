@@ -20,6 +20,7 @@ public:
   bool load(JsonObjectConst json);
   bool evaluate(const std::map<std::string, float>& values, time_t now,
                 PeripheralManager& mgr);
+  void serializeTo(JsonObject out) const;
   const std::string& id() const { return _id; }
   bool enabled() const { return _enabled; }
 
