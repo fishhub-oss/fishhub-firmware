@@ -16,6 +16,7 @@ private:
   void onMessage(char* topic, byte* payload, unsigned int len);
   void onConfig(byte* payload, unsigned int len);
   void onPeripheralConfig(const String& name, byte* payload, unsigned int len);
+  void onTriggerConfig(const String& id, byte* payload, unsigned int len);
 
   WiFiClientSecure   _tlsClient;
   PubSubClient       _client;

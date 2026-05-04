@@ -3,6 +3,7 @@
 #include "config.h"
 #include "peripherals/relay_actuator.h"
 #include "peripherals/ds18b20_sensor.h"
+#include "trigger.h"
 #include <ArduinoJson.h>
 
 static const unsigned long RECONNECT_INTERVAL_MS = 5000;
@@ -100,10 +101,12 @@ void FishHubMqttClient::connect() {
   String cmdTopic         = "fishhub/" + _deviceId + "/commands/#";
   String peripheralsTopic = "fishhub/" + _deviceId + "/peripherals/#";
   String configTopic      = "fishhub/" + _deviceId + "/config";
+  String triggersTopic    = "fishhub/" + _deviceId + "/triggers/#";
   _client.subscribe(cmdTopic.c_str());
   _client.subscribe(peripheralsTopic.c_str());
   _client.subscribe(configTopic.c_str());
-  Serial.printf("MQTT: connected, subscribed to commands, peripherals and config topics\n");
+  _client.subscribe(triggersTopic.c_str());
+  Serial.printf("MQTT: connected, subscribed to commands, peripherals, config and triggers topics\n");
 }
 
 void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) {
@@ -126,6 +129,11 @@ void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) 
 
   if (segment == "peripherals") {
     onPeripheralConfig(name, payload, len);
+    return;
+  }
+
+  if (segment == "triggers") {
+    onTriggerConfig(name, payload, len);
     return;
   }
 
@@ -256,4 +264,39 @@ void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, un
     }
     savePeripheralsToNVS(_manager);
   }
+}
+
+void FishHubMqttClient::onTriggerConfig(const String& id, byte* payload, unsigned int len) {
+  if (len == 0) return;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len)) {
+    Serial.printf("MQTT: bad JSON on triggers/%s\n", id.c_str());
+    return;
+  }
+
+  const char* op = doc["op"];
+  if (!op) return;
+
+  if (strcmp(op, "delete") == 0) {
+    _manager->removeTrigger(id.c_str());
+    Serial.printf("MQTT: removed trigger '%s'\n", id.c_str());
+    return;
+  }
+
+  if (strcmp(op, "upsert") == 0) {
+    Trigger* existing = _manager->findTrigger(id.c_str());
+    if (existing) {
+      existing->load(doc.as<JsonObjectConst>());
+      Serial.printf("MQTT: updated trigger '%s'\n", id.c_str());
+    } else {
+      Trigger* t = new Trigger();
+      t->load(doc.as<JsonObjectConst>());
+      _manager->addTrigger(t);
+      Serial.printf("MQTT: registered trigger '%s'\n", id.c_str());
+    }
+    return;
+  }
+
+  Serial.printf("MQTT: unknown op '%s' on triggers/%s\n", op, id.c_str());
 }
