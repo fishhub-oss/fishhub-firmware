@@ -290,7 +290,7 @@ static Trigger* makeTrigger(const char* id, const char* condJson,
   json += id;
   json += R"(","enabled":)";
   json += enabled ? "true" : "false";
-  json += R"(,"target":")";
+  json += R"(,"target_peripheral":")";
   json += target;
   json += R"(","cooldown_s":0,)";
   json += R"("action":{"action":"set","value":1.0},)";
@@ -365,7 +365,7 @@ void test_trigger_respects_cooldown(void) {
   mgr.add(relay);
   mgr.beginAll();
 
-  std::string json = R"({"id":"t1","enabled":true,"target":"relay","cooldown_s":10,)"
+  std::string json = R"({"id":"t1","enabled":true,"target_peripheral":"relay","cooldown_s":10,)"
                      R"("action":{"action":"set","value":1.0},)"
                      R"("condition":{"op":"lt","left":{"op":"value","measurement":"temp/value"},)"
                      R"("right":{"op":"literal","value":19.0}}})";
