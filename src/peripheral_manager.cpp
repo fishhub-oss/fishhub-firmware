@@ -45,6 +45,18 @@ String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
   JsonDocument doc;
   JsonArray records = doc.to<JsonArray>();
 
+  // Trigger evaluation runs first so any command it dispatches is applied
+  // before the peripheral tick loop drives the hardware.
+  if (!_triggers.empty()) {
+    std::map<std::string, float> values;
+    for (const auto& e : _entries) {
+      e.peripheral->currentMeasurements(values);
+    }
+    for (auto* t : _triggers) {
+      t->evaluate(values, now, *this);
+    }
+  }
+
   bool anyData = false;
   for (auto& e : _entries) {
     if (nowMs - e.lastTickedAt >= e.peripheral->intervalMs()) {
@@ -53,17 +65,6 @@ String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
         e.peripheral->appendSenML(records, now);
         anyData = true;
       }
-    }
-  }
-
-  // Trigger evaluation pass — runs regardless of whether readings were produced
-  if (!_triggers.empty()) {
-    std::map<std::string, float> values;
-    for (const auto& e : _entries) {
-      e.peripheral->currentMeasurements(values);
-    }
-    for (auto* t : _triggers) {
-      t->evaluate(values, now, *this);
     }
   }
 
@@ -88,10 +89,17 @@ String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
 void PeripheralManager::dispatchCommand(const String& name, JsonObjectConst cmd) {
   for (auto& e : _entries) {
     if (name == e.peripheral->name()) {
+#ifdef ARDUINO
+      String dbg; serializeJson(cmd, dbg);
+      Serial.printf("DBG  [dispatch]: -> '%s' cmd=%s\n", name.c_str(), dbg.c_str());
+#endif
       e.peripheral->applyCommand(cmd);
       return;
     }
   }
+#ifdef ARDUINO
+  Serial.printf("WARN [dispatch]: no peripheral named '%s'\n", name.c_str());
+#endif
 }
 
 Peripheral* PeripheralManager::find(const String& name) const {

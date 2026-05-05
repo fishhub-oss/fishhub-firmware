@@ -26,7 +26,7 @@ public:
 
 private:
   float evalNode(JsonObjectConst node,
-                 const std::map<std::string, float>& values) const;
+                 const std::map<std::string, float>& values, bool log) const;
   void  applyTo(PeripheralManager& mgr) const;
 
   std::string  _id;
@@ -34,6 +34,7 @@ private:
   JsonDocument _condDoc;
   std::string  _targetPeripheral;
   JsonDocument _actionDoc;
-  uint32_t     _cooldownS   = 60;
-  time_t       _lastFiredAt = 0;
+  uint32_t     _cooldownS    = 60;
+  time_t       _lastFiredAt  = 0;
+  uint32_t     _evalCount    = 0;
 };
