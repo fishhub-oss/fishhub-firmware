@@ -50,7 +50,7 @@ void RelayActuator::currentMeasurements(std::map<std::string, float>& out) const
 
 void RelayActuator::applyCommand(JsonObjectConst cmd) {
   const char* action = cmd["command"];
-  Serial.printf("DBG  [relay '%s']: applyCommand action='%s'\n",
+  Serial.printf("DBG  [relay '%s']: applyCommand command='%s'\n",
                 _name.c_str(), action ? action : "<null>");
   if (!action) return;
 
