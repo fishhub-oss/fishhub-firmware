@@ -137,11 +137,24 @@ static void initNormalOperation()
 
 static void sensorTick()
 {
+  unsigned long t0 = millis();
   mqttClient.loop();
+  unsigned long t1 = millis();
+
   time_t now = time(nullptr);
   String payload = manager.tickAll(now, millis());
+  unsigned long t2 = millis();
+
   if (!payload.isEmpty())
     mqttClient.publishReading(payload);
+  unsigned long t3 = millis();
+
+  mqttClient.drainEventQueue();
+  unsigned long t4 = millis();
+
+  if (t4-t0 > 100)
+    Serial.printf("DBG [tick timing]: loop=%lums tickAll=%lums publish=%lums drain=%lums total=%lums\n",
+                  t1-t0, t2-t1, t3-t2, t4-t3, t4-t0);
 }
 
 // ─── state dispatch ───────────────────────────────────────────────────────────
