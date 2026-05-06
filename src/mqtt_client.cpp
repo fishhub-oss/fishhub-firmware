@@ -80,6 +80,7 @@ void FishHubMqttClient::loop() {
       connect();
     }
   }
+
   _client.loop();
   drainEventQueue();
 }
@@ -110,7 +111,7 @@ void FishHubMqttClient::drainEventQueue() {
       r["value"]      = ev->readings[i].value;
     }
 
-    char payload[2048];
+    char payload[512];
     size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
     Serial.printf("MQTT: publishing trigger_event to '%s' (%u bytes)\n", topic, (unsigned)payloadLen);
