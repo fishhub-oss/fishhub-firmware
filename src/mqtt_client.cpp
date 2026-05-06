@@ -4,6 +4,7 @@
 #include "peripherals/relay_actuator.h"
 #include "peripherals/ds18b20_sensor.h"
 #include "trigger.h"
+#include "trigger_event_queue.h"
 #include <ArduinoJson.h>
 
 static const unsigned long RECONNECT_INTERVAL_MS = 5000;
@@ -43,8 +44,9 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )EOF";
 
-void FishHubMqttClient::begin(PeripheralManager& manager) {
-  _manager = &manager;
+void FishHubMqttClient::begin(PeripheralManager& manager, TriggerEventQueue& eventQueue) {
+  _manager    = &manager;
+  _eventQueue = &eventQueue;
 
   _deviceId    = nvsStore.get("device_id");
   if (_deviceId.isEmpty()) _deviceId = DEVICE_ID;
@@ -78,6 +80,45 @@ void FishHubMqttClient::loop() {
     }
   }
   _client.loop();
+  drainEventQueue();
+}
+
+void FishHubMqttClient::drainEventQueue() {
+  if (!_eventQueue || !_client.connected()) return;
+
+  while (!_eventQueue->empty()) {
+    const TriggerEvent* ev = _eventQueue->front();
+
+    char topic[80];
+    snprintf(topic, sizeof(topic), "fishhub/%s/trigger_events", _deviceId.c_str());
+
+    JsonDocument doc;
+    doc["trigger_event_id"] = ev->triggerEventId;
+    doc["trigger_id"]       = ev->triggerId;
+    doc["device_id"]        = _deviceId.c_str();
+
+    char firedAtBuf[32];
+    struct tm* utc = gmtime(&ev->firedAt);
+    strftime(firedAtBuf, sizeof(firedAtBuf), "%Y-%m-%dT%H:%M:%SZ", utc);
+    doc["fired_at"] = firedAtBuf;
+
+    JsonArray readings = doc["readings"].to<JsonArray>();
+    for (size_t i = 0; i < ev->readingCount; i++) {
+      JsonObject r = readings.add<JsonObject>();
+      r["peripheral"] = ev->readings[i].peripheral;
+      r["value"]      = ev->readings[i].value;
+    }
+
+    char payload[512];
+    serializeJson(doc, payload, sizeof(payload));
+
+    if (_client.publish(topic, payload, /*retained=*/false)) {
+      _eventQueue->pop();
+    } else {
+      Serial.println("MQTT: trigger_event publish failed — will retry next loop");
+      break;
+    }
+  }
 }
 
 void FishHubMqttClient::connect() {
