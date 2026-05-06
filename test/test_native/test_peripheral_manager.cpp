@@ -32,7 +32,7 @@ public:
   }
 
   void applyCommand(JsonObjectConst cmd) override {
-    lastCmd = cmd["action"].as<String>();
+    lastCmd = cmd["command"].as<String>();
   }
 
   void currentMeasurements(std::map<std::string, float>& out) const override {
@@ -131,7 +131,7 @@ void test_dispatch_command_routes_by_name(void) {
   mgr.beginAll();
 
   JsonDocument doc;
-  doc["action"] = "on";
+  doc["command"] = "on";
   mgr.dispatchCommand("relay", doc.as<JsonObjectConst>());
 
   TEST_ASSERT_EQUAL_STRING("on", a.lastCmd.c_str());
@@ -290,10 +290,10 @@ static Trigger* makeTrigger(const char* id, const char* condJson,
   json += id;
   json += R"(","enabled":)";
   json += enabled ? "true" : "false";
-  json += R"(,"target_peripheral":")";
+  json += R"(,"cooldown_s":0,)";
+  json += R"("actions":[{"type":"peripheral_action","config":{"peripheral":")";
   json += target;
-  json += R"(","cooldown_s":0,)";
-  json += R"("action":{"action":"set","value":1.0},)";
+  json += R"(","command":"set","value":1.0}}],)";
   json += R"("condition":)";
   json += condJson;
   json += "}";
@@ -365,8 +365,8 @@ void test_trigger_respects_cooldown(void) {
   mgr.add(relay);
   mgr.beginAll();
 
-  std::string json = R"({"id":"t1","enabled":true,"target_peripheral":"relay","cooldown_s":10,)"
-                     R"("action":{"action":"set","value":1.0},)"
+  std::string json = R"({"id":"t1","enabled":true,"cooldown_s":10,)"
+                     R"("actions":[{"type":"peripheral_action","config":{"peripheral":"relay","command":"set","value":1.0}}],)"
                      R"("condition":{"op":"lt","left":{"op":"value","measurement":"temp/value"},)"
                      R"("right":{"op":"literal","value":19.0}}})";
   JsonDocument doc;

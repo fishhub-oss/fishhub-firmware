@@ -10,6 +10,7 @@ using String = std::string;
 
 #include <ArduinoJson.h>
 #include <map>
+#include <vector>
 #include <time.h>
 
 // Forward declaration to avoid circular include with peripheral_manager.h
@@ -29,12 +30,16 @@ private:
                  const std::map<std::string, float>& values, bool log) const;
   void  applyTo(PeripheralManager& mgr) const;
 
-  std::string  _id;
-  bool         _enabled      = false;
-  JsonDocument _condDoc;
-  std::string  _targetPeripheral;
-  JsonDocument _actionDoc;
-  uint32_t     _cooldownS    = 60;
-  time_t       _lastFiredAt  = 0;
-  uint32_t     _evalCount    = 0;
+  struct PeripheralAction {
+    std::string  peripheral;
+    JsonDocument actionDoc;
+  };
+
+  std::string                  _id;
+  bool                         _enabled     = false;
+  JsonDocument                 _condDoc;
+  std::vector<PeripheralAction> _actions;
+  uint32_t                     _cooldownS   = 60;
+  time_t          _lastFiredAt = 0;
+  uint32_t        _evalCount   = 0;
 };
