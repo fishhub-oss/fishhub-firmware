@@ -76,6 +76,7 @@ void FishHubMqttClient::loop() {
     unsigned long now = millis();
     if (now - _lastConnectAttempt >= RECONNECT_INTERVAL_MS) {
       _lastConnectAttempt = now;
+      Serial.printf("MQTT: disconnected (state=%d) — reconnecting\n", _client.state());
       connect();
     }
   }
@@ -109,13 +110,15 @@ void FishHubMqttClient::drainEventQueue() {
       r["value"]      = ev->readings[i].value;
     }
 
-    char payload[512];
-    serializeJson(doc, payload, sizeof(payload));
+    char payload[2048];
+    size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
+    Serial.printf("MQTT: publishing trigger_event to '%s' (%u bytes)\n", topic, (unsigned)payloadLen);
     if (_client.publish(topic, payload, /*retained=*/false)) {
+      Serial.println("MQTT: trigger_event published OK");
       _eventQueue->pop();
     } else {
-      Serial.println("MQTT: trigger_event publish failed — will retry next loop");
+      Serial.printf("MQTT: trigger_event publish failed (state=%d) — will retry next loop\n", _client.state());
       break;
     }
   }

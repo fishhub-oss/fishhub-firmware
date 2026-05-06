@@ -142,6 +142,8 @@ static void sensorTick()
   String payload = manager.tickAll(now, millis());
   if (!payload.isEmpty())
     mqttClient.publishReading(payload);
+  // Drain trigger event queue after tickAll — triggers may have fired and pushed events.
+  mqttClient.drainEventQueue();
 }
 
 // ─── state dispatch ───────────────────────────────────────────────────────────

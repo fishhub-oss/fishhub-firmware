@@ -10,11 +10,11 @@ class FishHubMqttClient {
 public:
   void begin(PeripheralManager& manager, TriggerEventQueue& eventQueue);
   void loop();
+  void drainEventQueue();
   bool publishReading(const String& payload);
 
 private:
   void connect();
-  void drainEventQueue();
   void onMessage(char* topic, byte* payload, unsigned int len);
   void onConfig(byte* payload, unsigned int len);
   void onPeripheralConfig(const String& name, byte* payload, unsigned int len);
