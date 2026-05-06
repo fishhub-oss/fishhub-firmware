@@ -25,8 +25,8 @@ static void tickAndAppend(RelayActuator& relay, bool triggerChange,
   if (triggerChange) {
     // set with a value implicitly enters Manual mode and flips state ON.
     JsonDocument cmd;
-    cmd["action"] = "set";
-    cmd["value"]  = 1.0f;
+    cmd["command"] = "set";
+    cmd["value"]   = 1.0f;
     relay.applyCommand(cmd.as<JsonObjectConst>());
   }
 
@@ -45,8 +45,8 @@ void test_state_change_emits_change_source(void) {
 
   // set with a value implicitly enters Manual mode and flips state ON.
   JsonDocument cmd;
-  cmd["action"] = "set";
-  cmd["value"]  = 1.0f;
+  cmd["command"] = "set";
+  cmd["value"]   = 1.0f;
   relay.applyCommand(cmd.as<JsonObjectConst>());
 
   time_t t = T0 + ACTUATOR_HEARTBEAT_S;
