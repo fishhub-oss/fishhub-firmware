@@ -14,6 +14,7 @@ using String = std::string;
 #include <time.h>
 #include "peripheral.h"
 #include "trigger.h"
+#include "../src/trigger_event_queue.h"
 
 struct PeripheralEntry {
   Peripheral* peripheral;
@@ -62,8 +63,12 @@ public:
   // Iterates all triggers, calling fn(trigger) for each.
   void forEachTrigger(std::function<void(Trigger*)> fn) const;
 
+  // Injects the event queue. Must be called before tickAll if triggers are used.
+  void setEventQueue(TriggerEventQueue& queue) { _eventQueue = &queue; }
+
 private:
   std::vector<PeripheralEntry> _entries;
   std::vector<Trigger*>        _triggers;
+  TriggerEventQueue*           _eventQueue = nullptr;
   bool _begun = false;
 };

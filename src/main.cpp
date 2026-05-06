@@ -9,6 +9,7 @@
 #include "peripherals/ds18b20_sensor.h"
 #include "peripherals/relay_actuator.h"
 #include "trigger.h"
+#include "trigger_event_queue.h"
 #include "button.h"
 
 // ─── state machine ────────────────────────────────────────────────────────────
@@ -58,8 +59,9 @@ static void enterErrorRetry(State next, const char *reason)
 
 // ─── normal operation helpers ─────────────────────────────────────────────────
 
-static PeripheralManager manager;
-static FishHubMqttClient mqttClient;
+static PeripheralManager  manager;
+static FishHubMqttClient  mqttClient;
+static TriggerEventQueue  eventQueue;
 static bool normalOperationInitDone = false;
 
 static void restorePeripherals()
@@ -128,7 +130,8 @@ static void initNormalOperation()
   restorePeripherals();
   restoreTriggers();
   manager.beginAll();
-  mqttClient.begin(manager);
+  manager.setEventQueue(eventQueue);
+  mqttClient.begin(manager, eventQueue);
   normalOperationInitDone = true;
 }
 

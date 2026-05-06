@@ -1,4 +1,6 @@
 #include "peripheral_manager.h"
+#include "trigger_event_queue.h"
+#include <cstring>
 
 #ifndef ARDUINO
 // millis() not available on native — callers always inject nowMs
@@ -53,7 +55,28 @@ String PeripheralManager::tickAll(time_t now, uint32_t nowMs) {
       e.peripheral->currentMeasurements(values);
     }
     for (auto* t : _triggers) {
-      t->evaluate(values, now, *this);
+      TriggerFired result = t->evaluate(values, now);
+      if (!result.fired) continue;
+
+      for (size_t ai = 0; ai < result.actions.size(); ai++)
+        dispatchCommand(String(result.actions[ai].first.c_str()),
+                        result.actions[ai].second.as<JsonObjectConst>());
+
+      if (_eventQueue) {
+        TriggerEvent ev = {};
+        strncpy(ev.triggerId, result.triggerId.c_str(), sizeof(ev.triggerId) - 1);
+        ev.firedAt = result.firedAt;
+        std::string id = makeTriggerEventId(ev.triggerId, ev.firedAt);
+        strncpy(ev.triggerEventId, id.c_str(), sizeof(ev.triggerEventId) - 1);
+        for (auto it = result.readings.begin(); it != result.readings.end(); ++it) {
+          if (ev.readingCount >= TRIGGER_EVENT_MAX_READINGS) break;
+          strncpy(ev.readings[ev.readingCount].peripheral,
+                  it->first.c_str(), sizeof(ev.readings[0].peripheral) - 1);
+          ev.readings[ev.readingCount].value = it->second;
+          ev.readingCount++;
+        }
+        _eventQueue->push(ev);
+      }
     }
   }
 

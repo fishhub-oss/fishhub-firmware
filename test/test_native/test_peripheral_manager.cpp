@@ -8,6 +8,7 @@
 #include "../../src/peripheral_manager.cpp"
 #include "../../src/schedule.cpp"
 #include "../../src/trigger.cpp"
+#include "../../src/trigger_event_queue.cpp"
 
 // ── mock peripheral ──────────────────────────────────────────────────────────
 
