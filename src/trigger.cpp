@@ -18,12 +18,22 @@ bool Trigger::load(JsonObjectConst json)
 {
   _id = json["id"] | "";
   _enabled = json["enabled"] | false;
-  _targetPeripheral = json["target_peripheral"] | "";
   _cooldownS = json["cooldown_s"] | 60u;
   _lastFiredAt = 0;
+  _actions.clear();
 
   _condDoc.set(json["condition"]);
-  _actionDoc.set(json["action"]);
+
+  for (JsonObjectConst a : json["actions"].as<JsonArrayConst>()) {
+    const char* type = a["type"] | "";
+    if (strcmp(type, "peripheral_action") != 0) continue;
+
+    JsonObjectConst cfg = a["config"].as<JsonObjectConst>();
+    PeripheralAction pa;
+    pa.peripheral = cfg["peripheral"] | "";
+    pa.actionDoc.set(cfg);
+    _actions.push_back(std::move(pa));
+  }
 
   return !_id.empty();
 }
@@ -53,7 +63,7 @@ bool Trigger::evaluate(const std::map<std::string, float> &values, time_t now,
     return false;
   }
 
-  TRIG_DBG("'%s' FIRING -> '%s' (tick %lu)", _id.c_str(), _targetPeripheral.c_str(),
+  TRIG_DBG("'%s' FIRING %zu action(s) (tick %lu)", _id.c_str(), _actions.size(),
            (unsigned long)_evalCount);
   applyTo(mgr);
   _lastFiredAt = now;
@@ -181,18 +191,24 @@ float Trigger::evalNode(JsonObjectConst node,
 
 void Trigger::serializeTo(JsonObject out) const
 {
-  out["op"] = "upsert";
-  out["id"] = _id.c_str();
-  out["enabled"] = _enabled;
-  out["target_peripheral"] = _targetPeripheral.c_str();
+  out["op"]         = "upsert";
+  out["id"]         = _id.c_str();
+  out["enabled"]    = _enabled;
   out["cooldown_s"] = _cooldownS;
-  out["condition"] = _condDoc.as<JsonObjectConst>();
-  out["action"] = _actionDoc.as<JsonObjectConst>();
+  out["condition"]  = _condDoc.as<JsonObjectConst>();
+
+  JsonArray arr = out["actions"].to<JsonArray>();
+  for (const auto& a : _actions) {
+    JsonObject entry = arr.add<JsonObject>();
+    entry["type"]   = "peripheral_action";
+    entry["config"] = a.actionDoc.as<JsonObjectConst>();
+  }
 }
 
 void Trigger::applyTo(PeripheralManager &mgr) const
 {
-  if (_targetPeripheral.empty())
-    return;
-  mgr.dispatchCommand(String(_targetPeripheral.c_str()), _actionDoc.as<JsonObjectConst>());
+  for (const auto& a : _actions) {
+    mgr.dispatchCommand(String(a.peripheral.c_str()),
+                        a.actionDoc.as<JsonObjectConst>());
+  }
 }

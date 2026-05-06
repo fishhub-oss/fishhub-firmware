@@ -16,7 +16,7 @@
 static bool evalCond(const char* condJson,
                      const std::map<std::string, float>& values,
                      time_t now = 1000) {
-  std::string json = R"({"id":"t","enabled":true,"target":"","condition":)";
+  std::string json = R"({"id":"t","enabled":true,"actions":[],"condition":)";
   json += condJson;
   json += "}";
 
@@ -30,6 +30,27 @@ static bool evalCond(const char* condJson,
 
 static const char* COMPOUND =
   R"({"op":"or","left":{"op":"gt","left":{"op":"add","left":{"op":"value","measurement":"ds18b20-4/temperature"},"right":{"op":"value","measurement":"ds18b20-5/temperature"}},"right":{"op":"literal","value":38}},"right":{"op":"lt","left":{"op":"value","measurement":"ds18b20-4/temperature"},"right":{"op":"literal","value":18}}})";
+
+// ── stub peripheral ───────────────────────────────────────────────────────────
+
+struct RecordingPeripheral : public Peripheral {
+  const char* _name;
+  int         callCount = 0;
+  JsonDocument lastCmd;
+
+  explicit RecordingPeripheral(const char* name) : _name(name) {}
+
+  const char* name() const override { return _name; }
+  void begin() override {}
+  uint32_t intervalMs() const override { return 1000; }
+  bool tick(time_t) override { return false; }
+  void appendSenML(JsonArray&, time_t) override {}
+
+  void applyCommand(JsonObjectConst cmd) override {
+    callCount++;
+    lastCmd.set(cmd);
+  }
+};
 
 // ── leaf nodes ────────────────────────────────────────────────────────────────
 
@@ -199,7 +220,7 @@ void test_compound_both_false(void) {
 void test_cooldown_prevents_refire(void) {
   JsonDocument doc;
   deserializeJson(doc,
-    R"({"id":"t","enabled":true,"target":"","cooldown_s":60,"condition":{"op":"literal","value":1}})");
+    R"({"id":"t","enabled":true,"actions":[],"cooldown_s":60,"condition":{"op":"literal","value":1}})");
   Trigger t;
   t.load(doc.as<JsonObjectConst>());
   PeripheralManager mgr;
@@ -214,12 +235,140 @@ void test_cooldown_prevents_refire(void) {
 void test_disabled_does_not_fire(void) {
   JsonDocument doc;
   deserializeJson(doc,
-    R"({"id":"t","enabled":false,"target":"","condition":{"op":"literal","value":1}})");
+    R"({"id":"t","enabled":false,"actions":[],"condition":{"op":"literal","value":1}})");
   Trigger t;
   t.load(doc.as<JsonObjectConst>());
   PeripheralManager mgr;
 
   TEST_ASSERT_FALSE(t.evaluate({}, 1000, mgr));
+}
+
+// ── actions array ─────────────────────────────────────────────────────────────
+
+void test_load_single_action(void) {
+  JsonDocument doc;
+  deserializeJson(doc, R"({
+    "id": "t1",
+    "enabled": true,
+    "cooldown_s": 0,
+    "condition": {"op":"literal","value":1},
+    "actions": [
+      {"type":"peripheral_action","config":{"peripheral":"relay-16","command":"set","value":1}}
+    ]
+  })");
+
+  Trigger t;
+  t.load(doc.as<JsonObjectConst>());
+
+  auto* p = new RecordingPeripheral("relay-16");
+  PeripheralManager mgr;
+  mgr.add(p);
+
+  bool fired = t.evaluate({}, 1000, mgr);
+  TEST_ASSERT_TRUE(fired);
+  TEST_ASSERT_EQUAL(1, p->callCount);
+  TEST_ASSERT_EQUAL_STRING("set", p->lastCmd["command"] | "");
+  TEST_ASSERT_EQUAL_INT(1, p->lastCmd["value"] | 0);
+}
+
+void test_load_unknown_type_skipped(void) {
+  JsonDocument doc;
+  deserializeJson(doc, R"({
+    "id": "t2",
+    "enabled": true,
+    "cooldown_s": 0,
+    "condition": {"op":"literal","value":1},
+    "actions": [
+      {"type":"future_type","config":{"peripheral":"relay-16","command":"set","value":1}}
+    ]
+  })");
+
+  Trigger t;
+  t.load(doc.as<JsonObjectConst>());
+
+  auto* p = new RecordingPeripheral("relay-16");
+  PeripheralManager mgr;
+  mgr.add(p);
+
+  t.evaluate({}, 1000, mgr);
+  // Unknown type must be silently skipped — peripheral never called
+  TEST_ASSERT_EQUAL(0, p->callCount);
+}
+
+void test_load_many_actions(void) {
+  // 5 peripheral_action entries — all must be dispatched
+  JsonDocument doc;
+  deserializeJson(doc, R"({
+    "id": "t3",
+    "enabled": true,
+    "cooldown_s": 0,
+    "condition": {"op":"literal","value":1},
+    "actions": [
+      {"type":"peripheral_action","config":{"peripheral":"r1","command":"set","value":1}},
+      {"type":"peripheral_action","config":{"peripheral":"r2","command":"set","value":1}},
+      {"type":"peripheral_action","config":{"peripheral":"r3","command":"set","value":1}},
+      {"type":"peripheral_action","config":{"peripheral":"r4","command":"set","value":1}},
+      {"type":"peripheral_action","config":{"peripheral":"r5","command":"set","value":1}}
+    ]
+  })");
+
+  Trigger t;
+  bool ok = t.load(doc.as<JsonObjectConst>());
+  TEST_ASSERT_TRUE(ok);
+
+  auto* r1 = new RecordingPeripheral("r1");
+  auto* r2 = new RecordingPeripheral("r2");
+  auto* r3 = new RecordingPeripheral("r3");
+  auto* r4 = new RecordingPeripheral("r4");
+  auto* r5 = new RecordingPeripheral("r5");
+  PeripheralManager mgr;
+  mgr.add(r1); mgr.add(r2); mgr.add(r3); mgr.add(r4); mgr.add(r5);
+
+  t.evaluate({}, 1000, mgr);
+
+  // All 5 actions must be dispatched
+  TEST_ASSERT_EQUAL(1, r1->callCount);
+  TEST_ASSERT_EQUAL(1, r2->callCount);
+  TEST_ASSERT_EQUAL(1, r3->callCount);
+  TEST_ASSERT_EQUAL(1, r4->callCount);
+  TEST_ASSERT_EQUAL(1, r5->callCount);
+}
+
+void test_serialize_round_trip(void) {
+  const char* src = R"({
+    "id": "t4",
+    "enabled": true,
+    "cooldown_s": 30,
+    "condition": {"op":"literal","value":1},
+    "actions": [
+      {"type":"peripheral_action","config":{"peripheral":"relay-16","command":"set","value":1}}
+    ]
+  })";
+
+  JsonDocument loadDoc;
+  deserializeJson(loadDoc, src);
+  Trigger t;
+  t.load(loadDoc.as<JsonObjectConst>());
+
+  // Serialize into a new document
+  JsonDocument outDoc;
+  t.serializeTo(outDoc.to<JsonObject>());
+
+  TEST_ASSERT_EQUAL_STRING("upsert", outDoc["op"] | "");
+  TEST_ASSERT_EQUAL_STRING("t4", outDoc["id"] | "");
+  TEST_ASSERT_TRUE(outDoc["enabled"]);
+  TEST_ASSERT_EQUAL_INT(30, outDoc["cooldown_s"] | 0);
+
+  JsonArrayConst actions = outDoc["actions"].as<JsonArrayConst>();
+  TEST_ASSERT_EQUAL(1, actions.size());
+
+  JsonObjectConst entry = actions[0].as<JsonObjectConst>();
+  TEST_ASSERT_EQUAL_STRING("peripheral_action", entry["type"] | "");
+
+  JsonObjectConst cfg = entry["config"].as<JsonObjectConst>();
+  TEST_ASSERT_EQUAL_STRING("relay-16", cfg["peripheral"] | "");
+  TEST_ASSERT_EQUAL_STRING("set", cfg["command"] | "");
+  TEST_ASSERT_EQUAL_INT(1, cfg["value"] | 0);
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -266,6 +415,11 @@ int main(void) {
 
   RUN_TEST(test_cooldown_prevents_refire);
   RUN_TEST(test_disabled_does_not_fire);
+
+  RUN_TEST(test_load_single_action);
+  RUN_TEST(test_load_unknown_type_skipped);
+  RUN_TEST(test_load_many_actions);
+  RUN_TEST(test_serialize_round_trip);
 
   return UNITY_END();
 }
