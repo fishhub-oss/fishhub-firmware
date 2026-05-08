@@ -4,6 +4,9 @@
 #define WIFI_PASSWORD "your-password"
 
 // MQTT broker
+// Define MQTT_TLS to connect with TLS (e.g. HiveMQ Cloud on 8883).
+// Leave it undefined for plain TCP (e.g. self-hosted EMQX via TCP proxy).
+#define MQTT_TLS
 #define MQTT_HOST    "your-broker.hivemq.cloud"
 #define MQTT_PORT    8883
 

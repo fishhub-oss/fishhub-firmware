@@ -1,7 +1,9 @@
 #pragma once
 
+#include "config.h"
 #include <Arduino.h>
 #include <WiFiClientSecure.h>
+#include <WiFiClient.h>
 #include <PubSubClient.h>
 #include "peripheral_manager.h"
 #include "../src/trigger_event_queue.h"
@@ -20,7 +22,11 @@ private:
   void onPeripheralConfig(const String& name, byte* payload, unsigned int len);
   void onTriggerConfig(const String& id, byte* payload, unsigned int len);
 
+#ifdef MQTT_TLS
   WiFiClientSecure    _tlsClient;
+#else
+  WiFiClient          _plainClient;
+#endif
   PubSubClient        _client;
   PeripheralManager*  _manager    = nullptr;
   TriggerEventQueue*  _eventQueue = nullptr;
