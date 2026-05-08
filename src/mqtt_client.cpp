@@ -44,37 +44,43 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )EOF";
 
-void FishHubMqttClient::begin(PeripheralManager& manager, TriggerEventQueue& eventQueue) {
-  _manager    = &manager;
+void FishHubMqttClient::begin(PeripheralManager &manager, TriggerEventQueue &eventQueue)
+{
+  _manager = &manager;
   _eventQueue = &eventQueue;
 
-  _deviceId    = nvsStore.get("device_id");
-  if (_deviceId.isEmpty()) _deviceId = DEVICE_ID;
+  _deviceId = nvsStore.get("device_id");
+  if (_deviceId.isEmpty())
+    _deviceId = DEVICE_ID;
   _mqttUsername = nvsStore.get("mqtt_username");
   _mqttPassword = nvsStore.get("mqtt_password");
 
-  _mqttHost = nvsStore.get("mqtt_host");
-  if (_mqttHost.isEmpty()) _mqttHost = MQTT_HOST;
+  _mqttHost = MQTT_HOST;
   _mqttPort = MQTT_PORT;
 
+#ifdef MQTT_TLS
   _tlsClient.setCACert(ISRG_ROOT_X1);
-
   _client.setClient(_tlsClient);
+#else
+  _client.setClient(_plainClient);
+#endif
   _client.setBufferSize(1024);
   _client.setKeepAlive(30);
   _client.setServer(_mqttHost.c_str(), _mqttPort);
-  _client.setCallback([this](char* topic, byte* payload, unsigned int len) {
-    onMessage(topic, payload, len);
-  });
+  _client.setCallback([this](char *topic, byte *payload, unsigned int len)
+                      { onMessage(topic, payload, len); });
 
   connect();
   _lastConnectAttempt = millis();
 }
 
-void FishHubMqttClient::loop() {
-  if (!_client.connected()) {
+void FishHubMqttClient::loop()
+{
+  if (!_client.connected())
+  {
     unsigned long now = millis();
-    if (now - _lastConnectAttempt >= RECONNECT_INTERVAL_MS) {
+    if (now - _lastConnectAttempt >= RECONNECT_INTERVAL_MS)
+    {
       _lastConnectAttempt = now;
       Serial.printf("MQTT: disconnected (state=%d) — reconnecting\n", _client.state());
       connect();
@@ -85,68 +91,78 @@ void FishHubMqttClient::loop() {
   drainEventQueue();
 }
 
-void FishHubMqttClient::drainEventQueue() {
-  if (!_eventQueue || !_client.connected()) return;
+void FishHubMqttClient::drainEventQueue()
+{
+  if (!_eventQueue || !_client.connected())
+    return;
 
-  while (!_eventQueue->empty()) {
-    const TriggerEvent* ev = _eventQueue->front();
+  while (!_eventQueue->empty())
+  {
+    const TriggerEvent *ev = _eventQueue->front();
 
     char topic[80];
     snprintf(topic, sizeof(topic), "fishhub/%s/trigger_events", _deviceId.c_str());
 
     JsonDocument doc;
     doc["trigger_event_id"] = ev->triggerEventId;
-    doc["trigger_id"]       = ev->triggerId;
-    doc["device_id"]        = _deviceId.c_str();
+    doc["trigger_id"] = ev->triggerId;
+    doc["device_id"] = _deviceId.c_str();
 
     char firedAtBuf[32];
-    struct tm* utc = gmtime(&ev->firedAt);
+    struct tm *utc = gmtime(&ev->firedAt);
     strftime(firedAtBuf, sizeof(firedAtBuf), "%Y-%m-%dT%H:%M:%SZ", utc);
     doc["fired_at"] = firedAtBuf;
 
     JsonArray readings = doc["readings"].to<JsonArray>();
-    for (size_t i = 0; i < ev->readingCount; i++) {
+    for (size_t i = 0; i < ev->readingCount; i++)
+    {
       JsonObject r = readings.add<JsonObject>();
       r["peripheral"] = ev->readings[i].peripheral;
-      r["value"]      = ev->readings[i].value;
+      r["value"] = ev->readings[i].value;
     }
 
     char payload[512];
     size_t payloadLen = serializeJson(doc, payload, sizeof(payload));
 
     Serial.printf("MQTT: publishing trigger_event to '%s' (%u bytes)\n", topic, (unsigned)payloadLen);
-    if (_client.publish(topic, payload, /*retained=*/false)) {
+    if (_client.publish(topic, payload, /*retained=*/false))
+    {
       Serial.println("MQTT: trigger_event published OK");
       _eventQueue->pop();
-    } else {
+    }
+    else
+    {
       Serial.printf("MQTT: trigger_event publish failed (state=%d) — will retry next loop\n", _client.state());
       break;
     }
   }
 }
 
-void FishHubMqttClient::connect() {
-  if (_deviceId.isEmpty() || _mqttUsername.isEmpty() || _mqttPassword.isEmpty()) {
+void FishHubMqttClient::connect()
+{
+  if (_deviceId.isEmpty() || _mqttUsername.isEmpty() || _mqttPassword.isEmpty())
+  {
     Serial.println("MQTT: device_id, mqtt_username, or mqtt_password missing — skipping connect");
     return;
   }
 
   Serial.printf("MQTT: connecting as %s...\n", _mqttUsername.c_str());
   bool ok = _client.connect(
-    _deviceId.c_str(),      // client ID
-    _mqttUsername.c_str(),  // username
-    _mqttPassword.c_str()   // password
+      _deviceId.c_str(),     // client ID
+      _mqttUsername.c_str(), // username
+      _mqttPassword.c_str()  // password
   );
 
-  if (!ok) {
+  if (!ok)
+  {
     Serial.printf("MQTT: connect failed, rc=%d\n", _client.state());
     return;
   }
 
-  String cmdTopic         = "fishhub/" + _deviceId + "/commands/#";
+  String cmdTopic = "fishhub/" + _deviceId + "/commands/#";
   String peripheralsTopic = "fishhub/" + _deviceId + "/peripherals/#";
-  String configTopic      = "fishhub/" + _deviceId + "/config";
-  String triggersTopic    = "fishhub/" + _deviceId + "/triggers/#";
+  String configTopic = "fishhub/" + _deviceId + "/config";
+  String triggersTopic = "fishhub/" + _deviceId + "/triggers/#";
   _client.subscribe(cmdTopic.c_str());
   _client.subscribe(peripheralsTopic.c_str());
   _client.subscribe(configTopic.c_str());
@@ -154,60 +170,72 @@ void FishHubMqttClient::connect() {
   Serial.printf("MQTT: connected, subscribed to commands, peripherals, config and triggers topics\n");
 }
 
-void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) {
+void FishHubMqttClient::onMessage(char *topic, byte *payload, unsigned int len)
+{
   String t(topic);
   String prefix = "fishhub/" + _deviceId + "/";
-  if (!t.startsWith(prefix)) return;
+  if (!t.startsWith(prefix))
+    return;
 
-  String rest  = t.substring(prefix.length()); // e.g. "commands/light", "peripherals/light", "config"
+  String rest = t.substring(prefix.length()); // e.g. "commands/light", "peripherals/light", "config"
 
-  if (rest == "config") {
+  if (rest == "config")
+  {
     onConfig(payload, len);
     return;
   }
 
   int slash = rest.indexOf('/');
-  if (slash < 0) return;
+  if (slash < 0)
+    return;
 
   String segment = rest.substring(0, slash);
-  String name    = rest.substring(slash + 1);
+  String name = rest.substring(slash + 1);
 
-  if (segment == "peripherals") {
+  if (segment == "peripherals")
+  {
     onPeripheralConfig(name, payload, len);
     return;
   }
 
-  if (segment == "triggers") {
+  if (segment == "triggers")
+  {
     onTriggerConfig(name, payload, len);
     return;
   }
 
-  if (segment != "commands") return;
+  if (segment != "commands")
+    return;
 
   // Command dispatch
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload, len);
-  if (err) {
+  if (err)
+  {
     Serial.printf("MQTT: JSON parse error on topic %s: %s\n", topic, err.c_str());
     return;
   }
 
-  const char* cmdId = doc["id"];
-  if (!cmdId || strlen(cmdId) == 0) {
+  const char *cmdId = doc["id"];
+  if (!cmdId || strlen(cmdId) == 0)
+  {
     Serial.printf("MQTT: command missing 'id' field on topic %s — ignored\n", topic);
     return;
   }
 
-  Peripheral* peripheral = _manager->find(name);
-  if (!peripheral) {
+  Peripheral *peripheral = _manager->find(name);
+  if (!peripheral)
+  {
     Serial.printf("MQTT: no peripheral named '%s'\n", name.c_str());
     return;
   }
 
-  if (!peripheral->replayCommand()) {
+  if (!peripheral->replayCommand())
+  {
     String nvsKey = String("cmd_") + name;
     String lastId = nvsStore.get(nvsKey.c_str());
-    if (lastId == cmdId) {
+    if (lastId == cmdId)
+    {
       Serial.printf("MQTT: duplicate command id=%s for %s — skipped\n",
                     cmdId, name.c_str());
       return;
@@ -220,27 +248,30 @@ void FishHubMqttClient::onMessage(char* topic, byte* payload, unsigned int len) 
 }
 
 // Persist the current peripheral list to NVS as a JSON array.
-static void savePeripheralsToNVS(PeripheralManager* mgr) {
+static void savePeripheralsToNVS(PeripheralManager *mgr)
+{
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
-  mgr->forEach([&arr](Peripheral* p, const char* kind, int pin) {
+  mgr->forEach([&arr](Peripheral *p, const char *kind, int pin)
+               {
     if (!kind || pin < 0) return;
     JsonObject obj = arr.add<JsonObject>();
     obj["name"] = p->name();
     obj["kind"] = kind;
-    obj["pin"]  = pin;
-  });
+    obj["pin"]  = pin; });
   String json;
   serializeJson(doc, json);
   nvsStore.set("peripherals", json);
 }
 
 // Returns "tr_" + first 10 chars of trigger id — fits the 15-char NVS key limit.
-static String triggerNvsKey(const std::string& id) {
+static String triggerNvsKey(const std::string &id)
+{
   return String("tr_") + id.substr(0, 10).c_str();
 }
 
-static void saveTriggerToNVS(Trigger* t) {
+static void saveTriggerToNVS(Trigger *t)
+{
   JsonDocument doc;
   t->serializeTo(doc.as<JsonObject>());
   String json;
@@ -249,13 +280,16 @@ static void saveTriggerToNVS(Trigger* t) {
 
   String idxJson = nvsStore.get("trig_index");
   JsonDocument idxDoc;
-  if (idxJson.isEmpty() || deserializeJson(idxDoc, idxJson)) {
+  if (idxJson.isEmpty() || deserializeJson(idxDoc, idxJson))
+  {
     idxDoc.to<JsonArray>();
   }
-  JsonArray idx    = idxDoc.as<JsonArray>();
-  String    prefix = String(t->id().substr(0, 10).c_str());
-  for (JsonVariant v : idx) {
-    if (v.as<String>() == prefix) return;
+  JsonArray idx = idxDoc.as<JsonArray>();
+  String prefix = String(t->id().substr(0, 10).c_str());
+  for (JsonVariant v : idx)
+  {
+    if (v.as<String>() == prefix)
+      return;
   }
   idx.add(prefix);
   String newIdx;
@@ -263,48 +297,60 @@ static void saveTriggerToNVS(Trigger* t) {
   nvsStore.set("trig_index", newIdx);
 }
 
-static void removeTriggerFromNVS(const String& id) {
+static void removeTriggerFromNVS(const String &id)
+{
   std::string sid = id.c_str();
   nvsStore.remove(triggerNvsKey(sid).c_str());
 
   String idxJson = nvsStore.get("trig_index");
-  if (idxJson.isEmpty()) return;
+  if (idxJson.isEmpty())
+    return;
   JsonDocument idxDoc;
-  if (deserializeJson(idxDoc, idxJson)) return;
+  if (deserializeJson(idxDoc, idxJson))
+    return;
 
-  String       prefix = String(sid.substr(0, 10).c_str());
+  String prefix = String(sid.substr(0, 10).c_str());
   JsonDocument newDoc;
-  JsonArray    dst    = newDoc.to<JsonArray>();
-  for (JsonVariant v : idxDoc.as<JsonArray>()) {
-    if (v.as<String>() != prefix) dst.add(v);
+  JsonArray dst = newDoc.to<JsonArray>();
+  for (JsonVariant v : idxDoc.as<JsonArray>())
+  {
+    if (v.as<String>() != prefix)
+      dst.add(v);
   }
   String newIdx;
   serializeJson(newDoc, newIdx);
   nvsStore.set("trig_index", newIdx);
 }
 
-bool FishHubMqttClient::publishReading(const String& payload) {
-  if (!_client.connected()) {
+bool FishHubMqttClient::publishReading(const String &payload)
+{
+  if (!_client.connected())
+  {
     Serial.println("MQTT: not connected — skipping publish");
     return false;
   }
   String topic = "fishhub/" + _deviceId + "/readings";
   bool ok = _client.publish(topic.c_str(), payload.c_str(), false);
-  if (!ok) Serial.println("MQTT: publishReading failed");
+  if (!ok)
+    Serial.println("MQTT: publishReading failed");
   return ok;
 }
 
-void FishHubMqttClient::onConfig(byte* payload, unsigned int len) {
-  if (len == 0) return;
+void FishHubMqttClient::onConfig(byte *payload, unsigned int len)
+{
+  if (len == 0)
+    return;
 
   JsonDocument doc;
-  if (deserializeJson(doc, payload, len)) {
+  if (deserializeJson(doc, payload, len))
+  {
     Serial.println("MQTT: bad JSON on config topic");
     return;
   }
 
-  const char* tz = doc["timezone"];
-  if (!tz || strlen(tz) == 0) {
+  const char *tz = doc["timezone"];
+  if (!tz || strlen(tz) == 0)
+  {
     Serial.println("MQTT: config message missing 'timezone' — ignored");
     return;
   }
@@ -315,43 +361,56 @@ void FishHubMqttClient::onConfig(byte* payload, unsigned int len) {
   Serial.printf("MQTT: timezone set to %s\n", tz);
 }
 
-void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, unsigned int len) {
-  if (len == 0) return;
+void FishHubMqttClient::onPeripheralConfig(const String &name, byte *payload, unsigned int len)
+{
+  if (len == 0)
+    return;
 
   JsonDocument doc;
-  if (deserializeJson(doc, payload, len)) {
+  if (deserializeJson(doc, payload, len))
+  {
     Serial.printf("MQTT: bad JSON on peripherals/%s\n", name.c_str());
     return;
   }
 
-  const char* op = doc["op"];
-  if (!op) return;
+  const char *op = doc["op"];
+  if (!op)
+    return;
 
-  if (strcmp(op, "delete") == 0) {
+  if (strcmp(op, "delete") == 0)
+  {
     Serial.printf("MQTT: removing peripheral '%s'\n", name.c_str());
     _manager->remove(name);
     savePeripheralsToNVS(_manager);
     return;
   }
 
-  if (strcmp(op, "create") == 0) {
-    if (_manager->has(name)) {
+  if (strcmp(op, "create") == 0)
+  {
+    if (_manager->has(name))
+    {
       Serial.printf("MQTT: peripheral '%s' already registered — skipping\n", name.c_str());
       return;
     }
-    const char* kind = doc["kind"];
+    const char *kind = doc["kind"];
     int pin = doc["pin"] | -1;
-    if (!kind || pin < 0) {
+    if (!kind || pin < 0)
+    {
       Serial.printf("MQTT: peripheral '%s' missing kind or pin\n", name.c_str());
       return;
     }
-    if (strcmp(kind, "relay") == 0) {
+    if (strcmp(kind, "relay") == 0)
+    {
       _manager->add(new RelayActuator(name.c_str(), (uint8_t)pin), "relay", pin);
       Serial.printf("MQTT: registered relay '%s' on pin %d\n", name.c_str(), pin);
-    } else if (strcmp(kind, "ds18b20") == 0) {
+    }
+    else if (strcmp(kind, "ds18b20") == 0)
+    {
       _manager->add(new DS18B20Sensor(name.c_str(), (uint8_t)pin), "ds18b20", pin);
       Serial.printf("MQTT: registered ds18b20 '%s' on pin %d\n", name.c_str(), pin);
-    } else {
+    }
+    else
+    {
       Serial.printf("MQTT: unknown peripheral kind '%s'\n", kind);
       return;
     }
@@ -359,32 +418,41 @@ void FishHubMqttClient::onPeripheralConfig(const String& name, byte* payload, un
   }
 }
 
-void FishHubMqttClient::onTriggerConfig(const String& id, byte* payload, unsigned int len) {
-  if (len == 0) return;
+void FishHubMqttClient::onTriggerConfig(const String &id, byte *payload, unsigned int len)
+{
+  if (len == 0)
+    return;
 
   JsonDocument doc;
-  if (deserializeJson(doc, payload, len)) {
+  if (deserializeJson(doc, payload, len))
+  {
     Serial.printf("MQTT: bad JSON on triggers/%s\n", id.c_str());
     return;
   }
 
-  const char* op = doc["op"];
-  if (!op) return;
+  const char *op = doc["op"];
+  if (!op)
+    return;
 
-  if (strcmp(op, "delete") == 0) {
+  if (strcmp(op, "delete") == 0)
+  {
     _manager->removeTrigger(id.c_str());
     removeTriggerFromNVS(id);
     Serial.printf("MQTT: removed trigger '%s'\n", id.c_str());
     return;
   }
 
-  if (strcmp(op, "upsert") == 0) {
-    Trigger* existing = _manager->findTrigger(id.c_str());
-    if (existing) {
+  if (strcmp(op, "upsert") == 0)
+  {
+    Trigger *existing = _manager->findTrigger(id.c_str());
+    if (existing)
+    {
       existing->load(doc.as<JsonObjectConst>());
       Serial.printf("MQTT: updated trigger '%s'\n", id.c_str());
-    } else {
-      Trigger* t = new Trigger();
+    }
+    else
+    {
+      Trigger *t = new Trigger();
       t->load(doc.as<JsonObjectConst>());
       _manager->addTrigger(t);
       Serial.printf("MQTT: registered trigger '%s'\n", id.c_str());
