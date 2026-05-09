@@ -11,6 +11,7 @@
 #include "trigger.h"
 #include "trigger_event_queue.h"
 #include "button.h"
+#include "display/oled_display.h"
 
 // ─── state machine ────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ static void setState(State next)
   if (next != state) {
     Serial.printf("State: %s → %s\n", stateName(state), stateName(next));
     state = next;
+    oledDisplay.setCurrentState(stateName(next));
   }
 }
 
@@ -145,8 +147,23 @@ static void sensorTick()
   String payload = manager.tickAll(now, millis());
   unsigned long t2 = millis();
 
-  if (!payload.isEmpty())
+  if (!payload.isEmpty()) {
     mqttClient.publishReading(payload);
+
+    // Refresh MEASUREMENTS slide data from the current peripheral snapshot
+    std::vector<ReadingEntry> entries;
+    std::map<std::string, float> snap;
+    manager.forEach([&snap](Peripheral* p, const char*, int) {
+      p->currentMeasurements(snap);
+    });
+    for (auto& kv : snap) {
+      ReadingEntry e;
+      e.name  = String(kv.first.c_str());
+      e.value = String(kv.second, 2);
+      entries.push_back(e);
+    }
+    oledDisplay.updateReadings(entries);
+  }
   unsigned long t3 = millis();
 
   mqttClient.drainEventQueue();
@@ -203,6 +220,8 @@ void setup()
   Serial.println("FishHub firmware booting...");
   nvsStore.begin();
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
+  oledDisplay.begin();
 
   Serial.println("NVS key status:");
   for (const char *key : {"wifi_ssid", "wifi_pass", "device_id", "device_jwt",
@@ -214,10 +233,13 @@ void setup()
 
   state = nvsStore.isProvisioned() ? State::CONNECT_WIFI : State::PROVISIONING;
   Serial.printf("State: initial → %s\n", stateName(state));
+  oledDisplay.setCurrentState(stateName(state));
 }
 
 void loop()
 {
   checkButton();
+  checkDisplayButton();
   runState();
+  oledDisplay.tick(millis());
 }

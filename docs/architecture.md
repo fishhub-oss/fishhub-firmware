@@ -21,6 +21,9 @@ fishhub-firmware/
 │   ├── mqtt_client.h/.cpp      # FishHubMqttClient — TLS MQTT, command dispatch
 │   ├── peripheral_manager.cpp  # PeripheralManager implementation
 │   ├── schedule.h/.cpp         # Schedule — time-window + override state for actuators
+│   ├── display/
+│   │   ├── oled_display.h      # OledDisplay class + global oledDisplay instance
+│   │   └── oled_display.cpp    # SSD1306 rendering — MEASUREMENTS + DEBUG modes
 │   └── peripherals/
 │       ├── ds18b20_sensor.h/.cpp   # DS18B20Sensor — temperature reading via OneWire
 │       └── relay_actuator.h/.cpp   # RelayActuator — GPIO relay driven by Schedule
@@ -112,10 +115,33 @@ Captive-portal provisioning and device activation.
 - `tick()` evaluates the schedule every second and sets the GPIO accordingly. Emits a heartbeat SenML record every `ACTUATOR_HEARTBEAT_S` seconds (default 300 s) even when the state is unchanged, so the server always has a recent reading.
 - `replayCommand()` returns `true` — retained MQTT messages are re-applied on reboot, restoring schedule state without a round-trip to the server.
 
+### `display/oled_display.h` / `display/oled_display.cpp`
+
+`OledDisplay` drives a 128×64 SSD1306 OLED over I2C and provides two display modes toggled by `DISPLAY_BUTTON_PIN`. A global `oledDisplay` instance is defined in `oled_display.cpp` and used directly by `main.cpp` and `mqtt_client.cpp`. It is **not** a `Peripheral` and does not go through `PeripheralManager`.
+
+If `begin()` does not detect the SSD1306 (e.g. no display is connected), `_available` is set to `false` and all subsequent calls become no-ops — the firmware continues normally.
+
+**API:**
+
+| Method | Called by | Purpose |
+|---|---|---|
+| `begin()` | `setup()` | Initialises I2C + SSD1306; disables gracefully if not detected |
+| `tick(nowMs)` | `loop()` | Advances MEASUREMENTS slide timer; redraws when needed |
+| `setMode(DisplayMode)` | `checkDisplayButton()` | Switches between `MEASUREMENTS` and `DEBUG` |
+| `setCurrentState(str)` | `setState()` in `main.cpp` | Updates the state label in DEBUG mode |
+| `logEvent(line)` | `mqtt_client.cpp` | Appends a one-line event to the DEBUG ring buffer (16 slots, newest-at-top) |
+| `updateReadings(entries)` | `sensorTick()` in `main.cpp` | Replaces cached peripheral values for MEASUREMENTS slides |
+
+**MEASUREMENTS mode** — cycles through all registered peripheral readings one at a time, 2 s per slide, with the peripheral name on the top row and value in large text below. Shows "Waiting for data…" until the first tick completes.
+
+**DEBUG mode** — shows the current state machine state on an inverted top bar, and a scrolling ring buffer of recent MQTT events (inbound commands, trigger upserts/deletes, outbound readings, reconnects) on the lines below.
+
 ### `include/pins.h`
 - `ONE_WIRE_PIN 4` — GPIO pin for the DS18B20 OneWire data line.
 - `RESET_BUTTON_PIN 0` — GPIO 0 (BOOT button, active LOW). Holding for 3 s enters reconfiguration mode; 10 s clears all NVS data.
-- `RELAY_LIGHT_PIN` — GPIO pin for the light relay (define in `pins.h`).
+- `RELAY_LIGHT_PIN` — GPIO pin for the light relay.
+- `OLED_SDA_PIN 21` / `OLED_SCL_PIN 22` — I2C pins for the SSD1306 OLED.
+- `DISPLAY_BUTTON_PIN 35` — mode-toggle button (active LOW, `INPUT_PULLUP`). Short press (< 1 s) cycles MEASUREMENTS ↔ DEBUG.
 
 ## Boot flow
 
