@@ -41,10 +41,10 @@ void checkButton()
 
 static constexpr unsigned long DEBOUNCE_MS = 20;
 
-static bool          _displayBtnState   = HIGH; // last stable state
-static bool          _displayBtnRaw     = HIGH; // last raw read
-static unsigned long _displayBtnChanged = 0;    // when raw last changed
-static unsigned long _displayBtnDownAt  = 0;    // when stable LOW began
+static bool _displayBtnState = LOW;          // last stable state (idle = LOW with INPUT_PULLDOWN)
+static bool _displayBtnRaw = LOW;            // last raw read
+static unsigned long _displayBtnChanged = 0; // when raw last changed
+static unsigned long _displayBtnDownAt = 0;  // when stable HIGH began
 
 void checkDisplayButton()
 {
@@ -52,8 +52,9 @@ void checkDisplayButton()
   unsigned long now = millis();
 
   // Reset the debounce timer whenever the raw reading changes
-  if (raw != _displayBtnRaw) {
-    _displayBtnRaw     = raw;
+  if (raw != _displayBtnRaw)
+  {
+    _displayBtnRaw = raw;
     _displayBtnChanged = now;
   }
 
@@ -66,17 +67,21 @@ void checkDisplayButton()
 
   _displayBtnState = raw;
 
-  if (raw == LOW) {
-    // Stable falling edge — button pressed
+  if (raw == HIGH)
+  {
+    // Stable rising edge — button pressed (INPUT_PULLDOWN: press = HIGH)
     _displayBtnDownAt = now;
-  } else {
-    // Stable rising edge — button released
+  }
+  else
+  {
+    // Stable falling edge — button released
     unsigned long held = now - _displayBtnDownAt;
-    if (held >= 20 && held < 1000) {
+    if (held >= 20 && held < 1000)
+    {
       static DisplayMode currentMode = DisplayMode::MEASUREMENTS;
       currentMode = (currentMode == DisplayMode::MEASUREMENTS)
-                    ? DisplayMode::DEBUG
-                    : DisplayMode::MEASUREMENTS;
+                        ? DisplayMode::DEBUG
+                        : DisplayMode::MEASUREMENTS;
       oledDisplay.setMode(currentMode);
       Serial.printf("Display mode: %s\n",
                     currentMode == DisplayMode::MEASUREMENTS ? "MEASUREMENTS" : "DEBUG");

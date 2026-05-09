@@ -4,9 +4,9 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-static constexpr int SCREEN_WIDTH  = 128;
+static constexpr int SCREEN_WIDTH = 128;
 static constexpr int SCREEN_HEIGHT = 64;
-static constexpr int OLED_RESET    = -1; // shared with MCU reset
+static constexpr int OLED_RESET = -1; // shared with MCU reset
 
 // 2 seconds per peripheral slide in MEASUREMENTS mode
 static constexpr unsigned long SLIDE_INTERVAL_MS = 2000;
@@ -23,9 +23,10 @@ OledDisplay oledDisplay;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-static String truncate(const String& s, int maxLen)
+static String truncate(const String &s, int maxLen)
 {
-  if ((int)s.length() <= maxLen) return s;
+  if ((int)s.length() <= maxLen)
+    return s;
   return s.substring(0, maxLen - 1) + "~";
 }
 
@@ -39,9 +40,11 @@ void OledDisplay::begin()
 
   // Try both common SSD1306 addresses
   bool ok = display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  if (!ok) ok = display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
+  if (!ok)
+    ok = display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
 
-  if (!ok) {
+  if (!ok)
+  {
     Serial.println("OLED: SSD1306 not detected at 0x3C or 0x3D — display disabled");
     _available = false;
     return;
@@ -59,18 +62,24 @@ void OledDisplay::begin()
 
 void OledDisplay::tick(unsigned long nowMs)
 {
-  if (!_available) return;
+  if (!_available)
+    return;
 
-  if (_mode == DisplayMode::MEASUREMENTS) {
-    if (_readings.empty()) {
+  if (_mode == DisplayMode::MEASUREMENTS)
+  {
+    if (_readings.empty())
+    {
       // Draw the waiting screen once; _lastSlideMs == 0 flags "not yet drawn"
-      if (_lastSlideMs == 0) {
+      if (_lastSlideMs == 0)
+      {
         drawMeasurements();
         _lastSlideMs = nowMs; // mark as drawn (use nowMs so timer is relative)
       }
-    } else if (nowMs - _lastSlideMs >= SLIDE_INTERVAL_MS) {
+    }
+    else if (nowMs - _lastSlideMs >= SLIDE_INTERVAL_MS)
+    {
       _lastSlideMs = nowMs;
-      _slideIndex  = (_slideIndex + 1) % (int)_readings.size();
+      _slideIndex = (_slideIndex + 1) % (int)_readings.size();
       drawMeasurements();
     }
   }
@@ -79,9 +88,10 @@ void OledDisplay::tick(unsigned long nowMs)
 
 void OledDisplay::setMode(DisplayMode m)
 {
-  if (!_available) return;
-  _mode        = m;
-  _slideIndex  = 0;
+  if (!_available)
+    return;
+  _mode = m;
+  _slideIndex = 0;
   _lastSlideMs = 0; // 0 = "not yet drawn" sentinel for tick()
   if (m == DisplayMode::MEASUREMENTS)
     drawMeasurements();
@@ -89,7 +99,7 @@ void OledDisplay::setMode(DisplayMode m)
     drawDebug();
 }
 
-void OledDisplay::setCurrentState(const char* s)
+void OledDisplay::setCurrentState(const char *s)
 {
   strncpy(_currentState, s, sizeof(_currentState) - 1);
   _currentState[sizeof(_currentState) - 1] = '\0';
@@ -97,13 +107,16 @@ void OledDisplay::setCurrentState(const char* s)
     drawDebug();
 }
 
-void OledDisplay::logEvent(const String& line)
+void OledDisplay::logEvent(const String &line)
 {
   // Overwrite the oldest slot when full
   int slot = (_ringHead + _ringCount) % RING_SIZE;
-  if (_ringCount < RING_SIZE) {
+  if (_ringCount < RING_SIZE)
+  {
     _ringCount++;
-  } else {
+  }
+  else
+  {
     // Buffer full — advance head to discard oldest
     _ringHead = (_ringHead + 1) % RING_SIZE;
     slot = (_ringHead + _ringCount - 1) % RING_SIZE;
@@ -114,7 +127,7 @@ void OledDisplay::logEvent(const String& line)
     drawDebug();
 }
 
-void OledDisplay::updateReadings(const std::vector<ReadingEntry>& readings)
+void OledDisplay::updateReadings(const std::vector<ReadingEntry> &readings)
 {
   _readings = readings;
   if (_slideIndex >= (int)_readings.size())
@@ -131,7 +144,8 @@ void OledDisplay::drawMeasurements()
   display.setTextSize(1);
   display.setCursor(0, 0);
 
-  if (_readings.empty()) {
+  if (_readings.empty())
+  {
     display.println("MEASUREMENTS");
     display.println("");
     display.println("Waiting for data...");
@@ -139,7 +153,7 @@ void OledDisplay::drawMeasurements()
     return;
   }
 
-  const ReadingEntry& r = _readings[_slideIndex];
+  const ReadingEntry &r = _readings[_slideIndex];
   // Header: peripheral name
   display.setTextSize(1);
   display.setCursor(0, 0);
@@ -154,11 +168,13 @@ void OledDisplay::drawMeasurements()
   display.println(truncate(r.value, 10));
 
   // Slide indicator dots at the bottom
-  if (_readings.size() > 1) {
+  if (_readings.size() > 1)
+  {
     int dotSpacing = 8;
     int totalWidth = (int)_readings.size() * dotSpacing - 2;
-    int startX     = (SCREEN_WIDTH - totalWidth) / 2;
-    for (int i = 0; i < (int)_readings.size(); i++) {
+    int startX = (SCREEN_WIDTH - totalWidth) / 2;
+    for (int i = 0; i < (int)_readings.size(); i++)
+    {
       int x = startX + i * dotSpacing;
       if (i == _slideIndex)
         display.fillCircle(x, 60, 2, SSD1306_WHITE);
@@ -176,15 +192,16 @@ void OledDisplay::drawDebug()
   display.setTextSize(1);
 
   // Top line: current state (inverted colours for emphasis)
-  display.fillRect(0, 0, SCREEN_WIDTH, 9, SSD1306_WHITE);
+  display.fillRect(0, 0, SCREEN_WIDTH, 16, SSD1306_WHITE);
   display.setTextColor(SSD1306_BLACK);
-  display.setCursor(1, 1);
+  display.setCursor(1, 5);
   display.print(truncate(String(_currentState), LINE_CHARS));
   display.setTextColor(SSD1306_WHITE);
 
   // Log lines: show the most recent LOG_LINES entries, newest at top
-  int y = 11;
-  for (int i = 0; i < LOG_LINES && i < _ringCount; i++) {
+  int y = 18;
+  for (int i = 0; i < LOG_LINES && i < _ringCount; i++)
+  {
     // Read from newest → oldest
     int idx = (_ringHead + _ringCount - 1 - i + RING_SIZE) % RING_SIZE;
     display.setCursor(0, y);

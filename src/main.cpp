@@ -15,7 +15,8 @@
 
 // ─── state machine ────────────────────────────────────────────────────────────
 
-enum class State {
+enum class State
+{
   PROVISIONING,
   CONNECT_WIFI,
   NTP_SYNC,
@@ -26,25 +27,32 @@ enum class State {
 static State state;
 
 static unsigned long errorRetryUntil = 0;
-static State         errorNextState  = State::CONNECT_WIFI;
+static State errorNextState = State::CONNECT_WIFI;
 
 static const unsigned long ERROR_RETRY_DELAY_MS = 10000;
 
 static const char *stateName(State s)
 {
-  switch (s) {
-    case State::PROVISIONING:      return "PROVISIONING";
-    case State::CONNECT_WIFI:      return "CONNECT_WIFI";
-    case State::NTP_SYNC:          return "NTP_SYNC";
-    case State::NORMAL_OPERATION:  return "NORMAL_OPERATION";
-    case State::ERROR_RETRY:       return "ERROR_RETRY";
+  switch (s)
+  {
+  case State::PROVISIONING:
+    return "PROVISIONING";
+  case State::CONNECT_WIFI:
+    return "CONNECT_WIFI";
+  case State::NTP_SYNC:
+    return "NTP_SYNC";
+  case State::NORMAL_OPERATION:
+    return "NORMAL_OPERATION";
+  case State::ERROR_RETRY:
+    return "ERROR_RETRY";
   }
   return "UNKNOWN";
 }
 
 static void setState(State next)
 {
-  if (next != state) {
+  if (next != state)
+  {
     Serial.printf("State: %s → %s\n", stateName(state), stateName(next));
     state = next;
     oledDisplay.setCurrentState(stateName(next));
@@ -55,39 +63,46 @@ static void enterErrorRetry(State next, const char *reason)
 {
   Serial.printf("Error: %s — retrying in %lu s\n", reason, ERROR_RETRY_DELAY_MS / 1000);
   errorRetryUntil = millis() + ERROR_RETRY_DELAY_MS;
-  errorNextState  = next;
+  errorNextState = next;
   setState(State::ERROR_RETRY);
 }
 
 // ─── normal operation helpers ─────────────────────────────────────────────────
 
-static PeripheralManager  manager;
-static FishHubMqttClient  mqttClient;
-static TriggerEventQueue  eventQueue;
+static PeripheralManager manager;
+static FishHubMqttClient mqttClient;
+static TriggerEventQueue eventQueue;
 static bool normalOperationInitDone = false;
 
 static void restorePeripherals()
 {
   String json = nvsStore.get("peripherals");
-  if (json.isEmpty()) return;
+  if (json.isEmpty())
+    return;
 
   JsonDocument doc;
-  if (deserializeJson(doc, json)) {
+  if (deserializeJson(doc, json))
+  {
     Serial.println("NVS: failed to parse peripherals JSON — skipping restore");
     return;
   }
 
   JsonArray arr = doc.as<JsonArray>();
-  for (JsonObject p : arr) {
-    const char* name = p["name"];
-    const char* kind = p["kind"];
-    int pin          = p["pin"] | -1;
-    if (!name || !kind || pin < 0) continue;
+  for (JsonObject p : arr)
+  {
+    const char *name = p["name"];
+    const char *kind = p["kind"];
+    int pin = p["pin"] | -1;
+    if (!name || !kind || pin < 0)
+      continue;
 
-    if (strcmp(kind, "ds18b20") == 0) {
+    if (strcmp(kind, "ds18b20") == 0)
+    {
       manager.add(new DS18B20Sensor(name, (uint8_t)pin), "ds18b20", pin);
       Serial.printf("NVS: restored ds18b20 '%s' on pin %d\n", name, pin);
-    } else if (strcmp(kind, "relay") == 0) {
+    }
+    else if (strcmp(kind, "relay") == 0)
+    {
       manager.add(new RelayActuator(name, (uint8_t)pin), "relay", pin);
       Serial.printf("NVS: restored relay '%s' on pin %d\n", name, pin);
     }
@@ -97,31 +112,39 @@ static void restorePeripherals()
 static void restoreTriggers()
 {
   String idxJson = nvsStore.get("trig_index");
-  if (idxJson.isEmpty()) return;
+  if (idxJson.isEmpty())
+    return;
 
   JsonDocument idxDoc;
-  if (deserializeJson(idxDoc, idxJson)) {
+  if (deserializeJson(idxDoc, idxJson))
+  {
     Serial.println("NVS: failed to parse trig_index — skipping trigger restore");
     return;
   }
 
-  for (JsonVariant v : idxDoc.as<JsonArray>()) {
+  for (JsonVariant v : idxDoc.as<JsonArray>())
+  {
     String prefix = v.as<String>();
-    String key    = String("tr_") + prefix;
-    String json   = nvsStore.get(key.c_str());
-    if (json.isEmpty()) continue;
+    String key = String("tr_") + prefix;
+    String json = nvsStore.get(key.c_str());
+    if (json.isEmpty())
+      continue;
 
     JsonDocument doc;
-    if (deserializeJson(doc, json)) {
+    if (deserializeJson(doc, json))
+    {
       Serial.printf("NVS: failed to parse trigger '%s' — skipping\n", prefix.c_str());
       continue;
     }
 
-    Trigger* t = new Trigger();
-    if (t->load(doc.as<JsonObjectConst>())) {
+    Trigger *t = new Trigger();
+    if (t->load(doc.as<JsonObjectConst>()))
+    {
       manager.addTrigger(t);
       Serial.printf("NVS: restored trigger '%s'\n", t->id().c_str());
-    } else {
+    }
+    else
+    {
       delete t;
     }
   }
@@ -147,18 +170,19 @@ static void sensorTick()
   String payload = manager.tickAll(now, millis());
   unsigned long t2 = millis();
 
-  if (!payload.isEmpty()) {
+  if (!payload.isEmpty())
+  {
     mqttClient.publishReading(payload);
 
     // Refresh MEASUREMENTS slide data from the current peripheral snapshot
     std::vector<ReadingEntry> entries;
     std::map<std::string, float> snap;
-    manager.forEach([&snap](Peripheral* p, const char*, int) {
-      p->currentMeasurements(snap);
-    });
-    for (auto& kv : snap) {
+    manager.forEach([&snap](Peripheral *p, const char *, int)
+                    { p->currentMeasurements(snap); });
+    for (auto &kv : snap)
+    {
       ReadingEntry e;
-      e.name  = String(kv.first.c_str());
+      e.name = String(kv.first.c_str());
       e.value = String(kv.second, 2);
       entries.push_back(e);
     }
@@ -169,46 +193,53 @@ static void sensorTick()
   mqttClient.drainEventQueue();
   unsigned long t4 = millis();
 
-  if (t4-t0 > 100)
+  if (t4 - t0 > 100)
     Serial.printf("DBG [tick timing]: loop=%lums tickAll=%lums publish=%lums drain=%lums total=%lums\n",
-                  t1-t0, t2-t1, t3-t2, t4-t3, t4-t0);
+                  t1 - t0, t2 - t1, t3 - t2, t4 - t3, t4 - t0);
 }
 
 // ─── state dispatch ───────────────────────────────────────────────────────────
 
 static void runState()
 {
-  switch (state) {
-    case State::PROVISIONING:
-      startProvisioning(); // never returns — reboots on success
-      break;
+  switch (state)
+  {
+  case State::PROVISIONING:
+    startProvisioning(); // never returns — reboots on success
+    break;
 
-    case State::CONNECT_WIFI:
-      if (connectWifi()) {
-        setState(State::NTP_SYNC);
-      } else {
-        enterErrorRetry(State::CONNECT_WIFI, "Wi-Fi connection failed");
-      }
-      break;
+  case State::CONNECT_WIFI:
+    if (connectWifi())
+    {
+      setState(State::NTP_SYNC);
+    }
+    else
+    {
+      enterErrorRetry(State::CONNECT_WIFI, "Wi-Fi connection failed");
+    }
+    break;
 
-    case State::NTP_SYNC:
-      if (waitForNtp()) {
-        setState(State::NORMAL_OPERATION);
-      } else {
-        enterErrorRetry(State::CONNECT_WIFI, "NTP sync failed");
-      }
-      break;
+  case State::NTP_SYNC:
+    if (waitForNtp())
+    {
+      setState(State::NORMAL_OPERATION);
+    }
+    else
+    {
+      enterErrorRetry(State::CONNECT_WIFI, "NTP sync failed");
+    }
+    break;
 
-    case State::NORMAL_OPERATION:
-      if (!normalOperationInitDone)
-        initNormalOperation();
-      sensorTick();
-      break;
+  case State::NORMAL_OPERATION:
+    if (!normalOperationInitDone)
+      initNormalOperation();
+    sensorTick();
+    break;
 
-    case State::ERROR_RETRY:
-      if (millis() >= errorRetryUntil)
-        setState(errorNextState);
-      break;
+  case State::ERROR_RETRY:
+    if (millis() >= errorRetryUntil)
+      setState(errorNextState);
+    break;
   }
 }
 
@@ -220,7 +251,7 @@ void setup()
   Serial.println("FishHub firmware booting...");
   nvsStore.begin();
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLDOWN);
   oledDisplay.begin();
 
   Serial.println("NVS key status:");
