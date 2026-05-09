@@ -140,8 +140,7 @@ If `begin()` does not detect the SSD1306 (e.g. no display is connected), `_avail
 - `ONE_WIRE_PIN 4` — GPIO pin for the DS18B20 OneWire data line.
 - `RESET_BUTTON_PIN 0` — GPIO 0 (BOOT button, active LOW). Holding for 3 s enters reconfiguration mode; 10 s clears all NVS data.
 - `RELAY_LIGHT_PIN` — GPIO pin for the light relay.
-- `OLED_SDA_PIN 21` / `OLED_SCL_PIN 22` — I2C pins for the SSD1306 OLED.
-- `DISPLAY_BUTTON_PIN 35` — mode-toggle button (active LOW, `INPUT_PULLUP`). Short press (< 1 s) cycles MEASUREMENTS ↔ DEBUG.
+- `DISPLAY_BUTTON_PIN 18` — mode-toggle button (active LOW, `INPUT_PULLUP`). Short press (< 1 s) cycles MEASUREMENTS ↔ DEBUG. The OLED uses the default ESP32 I2C pins (SDA=21, SCL=22) — `Wire.begin()` is not called manually; the Adafruit SSD1306 library handles I2C initialisation internally.
 
 ## Boot flow
 

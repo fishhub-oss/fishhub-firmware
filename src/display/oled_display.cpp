@@ -1,7 +1,6 @@
 #include "oled_display.h"
 #include "pins.h"
 
-#include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
@@ -34,8 +33,9 @@ static String truncate(const String& s, int maxLen)
 
 void OledDisplay::begin()
 {
-  Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
-  Serial.printf("OLED: scanning I2C on SDA=%d SCL=%d\n", OLED_SDA_PIN, OLED_SCL_PIN);
+  // Do not call Wire.begin() manually — Adafruit_SSD1306 initialises I2C
+  // internally. Calling Wire.begin() with explicit pins beforehand interferes
+  // with the library's own initialisation sequence and causes a blank display.
 
   // Try both common SSD1306 addresses
   bool ok = display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
