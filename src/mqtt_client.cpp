@@ -5,6 +5,7 @@
 #include "peripherals/ds18b20_sensor.h"
 #include "trigger.h"
 #include "trigger_event_queue.h"
+#include "display/oled_display.h"
 #include <ArduinoJson.h>
 
 static const unsigned long RECONNECT_INTERVAL_MS = 5000;
@@ -83,6 +84,7 @@ void FishHubMqttClient::loop()
     {
       _lastConnectAttempt = now;
       Serial.printf("MQTT: disconnected (state=%d) — reconnecting\n", _client.state());
+      oledDisplay.logEvent("~ mqtt reconnect");
       connect();
     }
   }
@@ -244,6 +246,14 @@ void FishHubMqttClient::onMessage(char *topic, byte *payload, unsigned int len)
   }
 
   Serial.printf("MQTT: dispatching command id=%s to %s\n", cmdId, name.c_str());
+  {
+    // Build a compact one-liner for the debug display
+    const char* cmdType = doc["command"] | (doc["windows"] ? "schedule" : "set");
+    String evLine = String("< cmd ") + name + " " + cmdType;
+    if (doc["value"].is<int>() || doc["value"].is<float>())
+      evLine += "=" + String(doc["value"].as<float>(), 1);
+    oledDisplay.logEvent(evLine);
+  }
   _manager->dispatchCommand(name, doc.as<JsonObjectConst>());
 }
 
@@ -331,8 +341,29 @@ bool FishHubMqttClient::publishReading(const String &payload)
   }
   String topic = "fishhub/" + _deviceId + "/readings";
   bool ok = _client.publish(topic.c_str(), payload.c_str(), false);
-  if (!ok)
+  if (!ok) {
     Serial.println("MQTT: publishReading failed");
+  } else {
+    // Build compact display summary from first non-base SenML record
+    JsonDocument doc;
+    if (!deserializeJson(doc, payload)) {
+      JsonArray arr = doc.as<JsonArray>();
+      for (JsonObject rec : arr) {
+        if (rec["bn"]) continue; // skip base record
+        String n = rec["n"] | "?";
+        String evLine;
+        if (rec["v"].is<float>() || rec["v"].is<int>()) {
+          evLine = String("> ") + n + " " + String(rec["v"].as<float>(), 1);
+        } else if (!rec["vb"].isNull()) {
+          evLine = String("> ") + n + " " + (rec["vb"].as<bool>() ? "ON" : "OFF");
+        } else {
+          evLine = String("> ") + n;
+        }
+        oledDisplay.logEvent(evLine);
+        break;
+      }
+    }
+  }
   return ok;
 }
 
@@ -439,6 +470,7 @@ void FishHubMqttClient::onTriggerConfig(const String &id, byte *payload, unsigne
     _manager->removeTrigger(id.c_str());
     removeTriggerFromNVS(id);
     Serial.printf("MQTT: removed trigger '%s'\n", id.c_str());
+    oledDisplay.logEvent(String("< trig ") + id.substring(0, 6) + " del");
     return;
   }
 
@@ -458,6 +490,7 @@ void FishHubMqttClient::onTriggerConfig(const String &id, byte *payload, unsigne
       Serial.printf("MQTT: registered trigger '%s'\n", id.c_str());
     }
     saveTriggerToNVS(_manager->findTrigger(id.c_str()));
+    oledDisplay.logEvent(String("< trig ") + id.substring(0, 6) + " upsert");
     return;
   }
 
