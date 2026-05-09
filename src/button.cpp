@@ -39,22 +39,40 @@ void checkButton()
 
 // ─── Display mode-toggle button ───────────────────────────────────────────────
 
-static bool      _displayBtnPrev    = HIGH;
-static unsigned long _displayBtnDownAt = 0;
+static constexpr unsigned long DEBOUNCE_MS = 20;
+
+static bool          _displayBtnState   = HIGH; // last stable state
+static bool          _displayBtnRaw     = HIGH; // last raw read
+static unsigned long _displayBtnChanged = 0;    // when raw last changed
+static unsigned long _displayBtnDownAt  = 0;    // when stable LOW began
 
 void checkDisplayButton()
 {
-  bool cur = digitalRead(DISPLAY_BUTTON_PIN);
+  bool raw = digitalRead(DISPLAY_BUTTON_PIN);
+  unsigned long now = millis();
 
-  // Falling edge — button just pressed
-  if (_displayBtnPrev == HIGH && cur == LOW)
-    _displayBtnDownAt = millis();
+  // Reset the debounce timer whenever the raw reading changes
+  if (raw != _displayBtnRaw) {
+    _displayBtnRaw     = raw;
+    _displayBtnChanged = now;
+  }
 
-  // Rising edge — button released
-  if (_displayBtnPrev == LOW && cur == HIGH) {
-    unsigned long held = millis() - _displayBtnDownAt;
-    // Short press (< 1 s) → toggle mode
-    if (held < 1000) {
+  // Only accept a new stable state after DEBOUNCE_MS of stability
+  if (now - _displayBtnChanged < DEBOUNCE_MS)
+    return;
+
+  if (raw == _displayBtnState)
+    return; // no stable-state change
+
+  _displayBtnState = raw;
+
+  if (raw == LOW) {
+    // Stable falling edge — button pressed
+    _displayBtnDownAt = now;
+  } else {
+    // Stable rising edge — button released
+    unsigned long held = now - _displayBtnDownAt;
+    if (held >= 20 && held < 1000) {
       static DisplayMode currentMode = DisplayMode::MEASUREMENTS;
       currentMode = (currentMode == DisplayMode::MEASUREMENTS)
                     ? DisplayMode::DEBUG
@@ -64,6 +82,4 @@ void checkDisplayButton()
                     currentMode == DisplayMode::MEASUREMENTS ? "MEASUREMENTS" : "DEBUG");
     }
   }
-
-  _displayBtnPrev = cur;
 }
