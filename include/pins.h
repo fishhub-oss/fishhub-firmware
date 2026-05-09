@@ -9,5 +9,7 @@
 #define OLED_SDA_PIN       21
 #define OLED_SCL_PIN       22
 
-// Mode-toggle button for the OLED display (active LOW, INPUT_PULLUP)
-#define DISPLAY_BUTTON_PIN 35
+// Mode-toggle button for the OLED display (active LOW, INPUT_PULLUP).
+// Must be a pin that supports internal pull-ups (not GPIO 34–39 on ESP32,
+// which are input-only and have no pull-up hardware).
+#define DISPLAY_BUTTON_PIN 18

@@ -35,9 +35,14 @@ static String truncate(const String& s, int maxLen)
 void OledDisplay::begin()
 {
   Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+  Serial.printf("OLED: scanning I2C on SDA=%d SCL=%d\n", OLED_SDA_PIN, OLED_SCL_PIN);
 
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("OLED: SSD1306 not detected — display disabled");
+  // Try both common SSD1306 addresses
+  bool ok = display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  if (!ok) ok = display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
+
+  if (!ok) {
+    Serial.println("OLED: SSD1306 not detected at 0x3C or 0x3D — display disabled");
     _available = false;
     return;
   }
@@ -49,7 +54,7 @@ void OledDisplay::begin()
   display.setCursor(0, 0);
   display.println("FishHub booting...");
   display.display();
-  Serial.println("OLED: SSD1306 initialised");
+  Serial.println("OLED: SSD1306 initialised OK");
 }
 
 void OledDisplay::tick(unsigned long nowMs)
@@ -57,11 +62,15 @@ void OledDisplay::tick(unsigned long nowMs)
   if (!_available) return;
 
   if (_mode == DisplayMode::MEASUREMENTS) {
-    if (!_readings.empty() && nowMs - _lastSlideMs >= SLIDE_INTERVAL_MS) {
+    if (_readings.empty()) {
+      // Draw the waiting screen once; _lastSlideMs == 0 flags "not yet drawn"
+      if (_lastSlideMs == 0) {
+        drawMeasurements();
+        _lastSlideMs = nowMs; // mark as drawn (use nowMs so timer is relative)
+      }
+    } else if (nowMs - _lastSlideMs >= SLIDE_INTERVAL_MS) {
       _lastSlideMs = nowMs;
       _slideIndex  = (_slideIndex + 1) % (int)_readings.size();
-      drawMeasurements();
-    } else if (_readings.empty()) {
       drawMeasurements();
     }
   }
@@ -71,9 +80,9 @@ void OledDisplay::tick(unsigned long nowMs)
 void OledDisplay::setMode(DisplayMode m)
 {
   if (!_available) return;
-  _mode = m;
+  _mode        = m;
   _slideIndex  = 0;
-  _lastSlideMs = 0;
+  _lastSlideMs = 0; // 0 = "not yet drawn" sentinel for tick()
   if (m == DisplayMode::MEASUREMENTS)
     drawMeasurements();
   else
