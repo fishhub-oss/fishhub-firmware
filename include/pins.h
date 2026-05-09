@@ -5,7 +5,7 @@
 #define RELAY_LIGHT_PIN    16
 #define SERVO_PIN          17
 
-// Mode-toggle button for the OLED display (active LOW, INPUT_PULLUP).
-// Must be a pin that supports internal pull-ups (not GPIO 34–39 on ESP32,
-// which are input-only and have no pull-up hardware).
+// Mode-toggle button for the OLED display (active HIGH, INPUT_PULLDOWN).
+// Press pulls the pin to 3.3 V; idle is LOW. Must be a pin that supports
+// internal pull-downs (not GPIO 34–39, which are input-only with no pull hardware).
 #define DISPLAY_BUTTON_PIN 19
