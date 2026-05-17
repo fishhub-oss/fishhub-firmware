@@ -20,6 +20,7 @@ public:
   void        begin() override {}
   uint32_t    intervalMs() const override { return _interval; }
   const char* name() const override { return _name; }
+  const char* kind() const override { return "mock"; }
 
   bool tick(time_t /*now*/) override {
     tickCount++;
