@@ -8,6 +8,7 @@
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
 #include "peripherals/relay_actuator.h"
+#include "peripheral_serializer_registry.h"
 #include "trigger.h"
 #include "trigger_event_queue.h"
 #include "button.h"
@@ -96,16 +97,14 @@ static void restorePeripherals()
     if (!name || !kind || pin < 0)
       continue;
 
-    if (strcmp(kind, "ds18b20") == 0)
+    Peripheral *peripheral = peripheralSerializerRegistry.deserialize(kind, name, p);
+    if (!peripheral)
     {
-      manager.add(new DS18B20Sensor(name, (uint8_t)pin), "ds18b20", pin);
-      Serial.printf("NVS: restored ds18b20 '%s' on pin %d\n", name, pin);
+      Serial.printf("NVS: failed to restore peripheral '%s' (kind '%s')\n", name, kind);
+      continue;
     }
-    else if (strcmp(kind, "relay") == 0)
-    {
-      manager.add(new RelayActuator(name, (uint8_t)pin), "relay", pin);
-      Serial.printf("NVS: restored relay '%s' on pin %d\n", name, pin);
-    }
+    manager.add(peripheral, pin);
+    Serial.printf("NVS: restored %s '%s' on pin %d\n", kind, name, pin);
   }
 }
 
@@ -152,6 +151,9 @@ static void restoreTriggers()
 
 static void initNormalOperation()
 {
+  peripheralSerializerRegistry.registerKind("relay",   new RelaySerializer());
+  peripheralSerializerRegistry.registerKind("ds18b20", new DS18B20Serializer());
+
   restorePeripherals();
   restoreTriggers();
   manager.beginAll();
@@ -177,8 +179,8 @@ static void sensorTick()
     // Refresh MEASUREMENTS slide data from the current peripheral snapshot
     std::vector<ReadingEntry> entries;
     std::map<std::string, float> snap;
-    manager.forEach([&snap](Peripheral *p, const char *, int)
-                    { p->currentMeasurements(snap); });
+    manager.forEach([&snap](PeripheralEntry &e)
+                    { e.peripheral->currentMeasurements(snap); });
     for (auto &kv : snap)
     {
       ReadingEntry e;

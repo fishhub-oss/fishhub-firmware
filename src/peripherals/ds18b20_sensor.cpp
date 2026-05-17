@@ -1,8 +1,9 @@
 #include "ds18b20_sensor.h"
 #include <Arduino.h>
 
-DS18B20Sensor::DS18B20Sensor(std::string name, uint8_t pin, uint32_t intervalMs)
-  : _name(std::move(name)), _ow(pin), _sensors(&_ow), _lastTemp(0.0f), _intervalMs(intervalMs) {}
+DS18B20Sensor::DS18B20Sensor(std::string name, uint8_t pin, std::string purpose, uint32_t intervalMs)
+  : _name(std::move(name)), _purpose(std::move(purpose)), _pin(pin),
+    _ow(pin), _sensors(&_ow), _lastTemp(0.0f), _intervalMs(intervalMs) {}
 
 void DS18B20Sensor::begin() {
   _sensors.begin();

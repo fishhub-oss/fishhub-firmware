@@ -3,6 +3,7 @@
 #include "config.h"
 #include "peripherals/relay_actuator.h"
 #include "peripherals/ds18b20_sensor.h"
+#include "peripheral_serializer_registry.h"
 #include "trigger.h"
 #include "trigger_event_queue.h"
 #include "display/oled_display.h"
@@ -262,13 +263,13 @@ static void savePeripheralsToNVS(PeripheralManager *mgr)
 {
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
-  mgr->forEach([&arr](Peripheral *p, const char *kind, int pin)
-               {
-    if (!kind || pin < 0) return;
+  mgr->forEach([&arr](PeripheralEntry &e) {
     JsonObject obj = arr.add<JsonObject>();
-    obj["name"] = p->name();
-    obj["kind"] = kind;
-    obj["pin"]  = pin; });
+    obj["name"] = e.peripheral->name();
+    obj["kind"] = e.peripheral->kind();
+    obj["pin"]  = e.pin;
+    peripheralSerializerRegistry.serialize(e.peripheral, obj);
+  });
   String json;
   serializeJson(doc, json);
   nvsStore.set("peripherals", json);
@@ -430,21 +431,14 @@ void FishHubMqttClient::onPeripheralConfig(const String &name, byte *payload, un
       Serial.printf("MQTT: peripheral '%s' missing kind or pin\n", name.c_str());
       return;
     }
-    if (strcmp(kind, "relay") == 0)
+    Peripheral *p = peripheralSerializerRegistry.deserialize(kind, name.c_str(), doc.as<JsonObjectConst>());
+    if (!p)
     {
-      _manager->add(new RelayActuator(name.c_str(), (uint8_t)pin), "relay", pin);
-      Serial.printf("MQTT: registered relay '%s' on pin %d\n", name.c_str(), pin);
-    }
-    else if (strcmp(kind, "ds18b20") == 0)
-    {
-      _manager->add(new DS18B20Sensor(name.c_str(), (uint8_t)pin), "ds18b20", pin);
-      Serial.printf("MQTT: registered ds18b20 '%s' on pin %d\n", name.c_str(), pin);
-    }
-    else
-    {
-      Serial.printf("MQTT: unknown peripheral kind '%s'\n", kind);
+      Serial.printf("MQTT: unknown or invalid peripheral kind '%s'\n", kind);
       return;
     }
+    _manager->add(p, pin);
+    Serial.printf("MQTT: registered %s '%s' on pin %d\n", kind, name.c_str(), pin);
     savePeripheralsToNVS(_manager);
   }
 }

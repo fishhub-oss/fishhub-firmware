@@ -19,8 +19,7 @@ using String = std::string;
 struct PeripheralEntry {
   Peripheral* peripheral;
   uint32_t    lastTickedAt;
-  const char* kind = nullptr;
-  int         pin  = -1;
+  int         pin = -1;
 };
 
 class PeripheralManager {
@@ -28,10 +27,10 @@ public:
   // Adds a peripheral. If beginAll() has already been called, begin() is
   // invoked immediately so late-registered peripherals are initialised.
   // Ownership of the pointer is transferred — remove() will delete it.
-  void add(Peripheral* p, const char* kind = nullptr, int pin = -1);
+  void add(Peripheral* p, int pin = -1);
 
-  // Iterates all entries, calling fn(peripheral, kind, pin) for each.
-  void forEach(std::function<void(Peripheral*, const char*, int)> fn) const;
+  // Iterates all entries, calling fn(entry) for each.
+  void forEach(std::function<void(PeripheralEntry&)> fn);
   void beginAll();
 
   // Removes the peripheral with the given name and deletes the object.

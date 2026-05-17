@@ -4,8 +4,8 @@
 #include "nvs_store.h"
 #endif
 
-RelayActuator::RelayActuator(std::string name, uint8_t pin)
-  : _name(std::move(name)), _pin(pin) {}
+RelayActuator::RelayActuator(std::string name, uint8_t pin, std::string purpose)
+  : _name(std::move(name)), _purpose(std::move(purpose)), _pin(pin) {}
 
 void RelayActuator::begin() {
   pinMode(_pin, OUTPUT);
