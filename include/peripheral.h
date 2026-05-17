@@ -44,4 +44,12 @@ public:
 
   // Unique name — used as MQTT topic segment and SenML field name prefix.
   virtual const char* name() const = 0;
+
+  // String constant identifying the peripheral class (e.g. "relay", "ds18b20").
+  // Derived from the class itself; never stored in PeripheralEntry.
+  virtual const char* kind() const = 0;
+
+  // User-defined label describing what this peripheral is used for.
+  // Stored at construction; no firmware logic inspects it.
+  virtual const char* purpose() const { return ""; }
 };
