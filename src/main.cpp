@@ -8,6 +8,7 @@
 #include "peripheral_manager.h"
 #include "peripherals/ds18b20_sensor.h"
 #include "peripherals/relay_actuator.h"
+#include "peripherals/servo_actuator.h"
 #include "peripheral_serializer_registry.h"
 #include "trigger.h"
 #include "trigger_event_queue.h"
@@ -151,8 +152,9 @@ static void restoreTriggers()
 
 static void initNormalOperation()
 {
-  peripheralSerializerRegistry.registerKind("relay",   new RelaySerializer());
-  peripheralSerializerRegistry.registerKind("ds18b20", new DS18B20Serializer());
+  peripheralSerializerRegistry.registerKind("relay",          new RelaySerializer());
+  peripheralSerializerRegistry.registerKind("ds18b20",        new DS18B20Serializer());
+  peripheralSerializerRegistry.registerKind("servo_actuator", new ServoActuatorSerializer());
 
   restorePeripherals();
   restoreTriggers();
