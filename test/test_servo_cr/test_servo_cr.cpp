@@ -13,7 +13,7 @@ void test_actuate_sets_pending_rotation(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"]          = "actuate";
+  cmd["command"]          = "actuate";
   cmd["rotation_ms"] = 1200;
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
@@ -38,7 +38,7 @@ void test_append_senml_clears_pending(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"]          = "actuate";
+  cmd["command"]          = "actuate";
   cmd["rotation_ms"] = 500;
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
@@ -58,7 +58,7 @@ void test_unknown_op_ignored(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"] = "reboot";
+  cmd["command"] = "reboot";
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
   JsonDocument doc;
@@ -72,7 +72,7 @@ void test_sense_emitted_when_pending(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"]          = "actuate";
+  cmd["command"]          = "actuate";
   cmd["rotation_ms"] = 300;
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
@@ -98,7 +98,7 @@ void test_schedule_cron_entry_fires_when_due(void) {
   snprintf(cron, sizeof(cron), "%d %d * * *", t->tm_min, t->tm_hour);
 
   JsonDocument cmd;
-  cmd["op"]   = "schedule";
+  cmd["command"]   = "schedule";
   cmd["type"] = "cron";
   JsonArray entries = cmd["entries"].to<JsonArray>();
   JsonObject entry  = entries.add<JsonObject>();
@@ -134,7 +134,7 @@ void test_schedule_cron_entry_does_not_refire_same_minute(void) {
   snprintf(cron, sizeof(cron), "%d %d * * *", t->tm_min, t->tm_hour);
 
   JsonDocument cmd;
-  cmd["op"]   = "schedule";
+  cmd["command"]   = "schedule";
   cmd["type"] = "cron";
   JsonArray entries = cmd["entries"].to<JsonArray>();
   JsonObject entry  = entries.add<JsonObject>();
@@ -160,7 +160,7 @@ void test_schedule_cron_type_missing_defaults_to_windows_noop(void) {
 
   // Missing type — should not load cron entries, no crash
   JsonDocument cmd;
-  cmd["op"] = "schedule";
+  cmd["command"] = "schedule";
   // no "type" field
   JsonArray entries = cmd["entries"].to<JsonArray>();
   JsonObject entry  = entries.add<JsonObject>();
@@ -184,7 +184,7 @@ void test_schedule_replace_clears_entries_for_removed_ids(void) {
 
   // Load e1 — should fire at T0
   JsonDocument cmd1;
-  cmd1["op"]   = "schedule";
+  cmd1["command"]   = "schedule";
   cmd1["type"] = "cron";
   JsonArray e1 = cmd1["entries"].to<JsonArray>();
   JsonObject en1 = e1.add<JsonObject>();
@@ -196,7 +196,7 @@ void test_schedule_replace_clears_entries_for_removed_ids(void) {
 
   // Replace with e2 only — e1 is gone, e2 has a non-matching cron so nothing fires
   JsonDocument cmd2;
-  cmd2["op"]   = "schedule";
+  cmd2["command"]   = "schedule";
   cmd2["type"] = "cron";
   JsonArray e2 = cmd2["entries"].to<JsonArray>();
   JsonObject en2 = e2.add<JsonObject>();
