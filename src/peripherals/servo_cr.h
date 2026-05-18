@@ -12,13 +12,13 @@
 #include <string>
 #include <ArduinoJson.h>
 #include "peripheral.h"
-#include "peripheral_serializer_registry.h"
+#include "../peripheral_serializer_registry.h"
 #include "../cron_trigger.h"
 
-class ServoActuator : public Peripheral {
+class ServoCR : public Peripheral {
 public:
-  ServoActuator(const char* name, uint8_t pin,
-                int sensePin = -1, const char* purpose = "");
+  ServoCR(const char* name, uint8_t pin,
+          int sensePin = -1, const char* purpose = "");
 
   void        begin() override;
   uint32_t    intervalMs() const override { return 1000; }
@@ -27,11 +27,10 @@ public:
   void        currentMeasurements(std::map<std::string, float>& out) const override;
   void        applyCommand(JsonObjectConst cmd) override;
   const char* name()    const override { return _name.c_str(); }
-  const char* kind()    const override { return "servo_actuator"; }
+  const char* kind()    const override { return "servo_cr"; }
   const char* purpose() const override { return _purpose.c_str(); }
   int         sensePin() const         { return _sensePin; }
 
-  // One-shot — MQTT client deduplicates actuation commands by id.
   bool replayCommand() const override { return false; }
 
 private:
@@ -55,10 +54,10 @@ private:
   bool  _sensePending    = false;
 };
 
-class ServoActuatorSerializer : public PeripheralSerializer {
+class ServoCRSerializer : public PeripheralSerializer {
 public:
   void serialize(Peripheral* p, JsonObject& out) const override {
-    auto* s = static_cast<ServoActuator*>(p);
+    auto* s = static_cast<ServoCR*>(p);
     out["sense_pin"] = s->sensePin();
     out["purpose"]   = s->purpose();
   }
@@ -68,6 +67,6 @@ public:
     int sensePin = obj["sense_pin"] | -1;
     if (pin < 0) return nullptr;
     const char* purpose = obj["purpose"] | "";
-    return new ServoActuator(name, (uint8_t)pin, sensePin, purpose);
+    return new ServoCR(name, (uint8_t)pin, sensePin, purpose);
   }
 };
