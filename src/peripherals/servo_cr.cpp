@@ -57,16 +57,16 @@ void ServoCR::currentMeasurements(std::map<std::string, float>& out) const {
 }
 
 void ServoCR::applyCommand(JsonObjectConst cmd) {
-  const char* op = cmd["op"];
-  if (!op) return;
+  const char* command = cmd["command"];
+  if (!command) return;
 
-  if (strcmp(op, "actuate") == 0) {
+  if (strcmp(command, "actuate") == 0) {
     int rotationMs = cmd["rotation_ms"] | 500;
 #ifdef ARDUINO
     Serial.printf("ServoCR '%s': actuate %d ms\n", _name.c_str(), rotationMs);
 #endif
     _actuate(rotationMs);
-  } else if (strcmp(op, "schedule") == 0) {
+  } else if (strcmp(command, "schedule") == 0) {
     const char* type = cmd["type"] | "windows";
     if (strcmp(type, "cron") == 0)
       _loadEntries(cmd["entries"].as<JsonArrayConst>());

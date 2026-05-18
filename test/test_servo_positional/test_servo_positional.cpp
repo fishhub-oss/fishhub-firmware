@@ -13,7 +13,7 @@ void test_actuate_explicit_angle(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"]         = "actuate";
+  cmd["command"]         = "actuate";
   cmd["open_angle"] = 90;
   cmd["hold_ms"]    = 600;
   servo.applyCommand(cmd.as<JsonObjectConst>());
@@ -39,7 +39,7 @@ void test_actuate_defaults_to_construction_angle(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"] = "actuate";
+  cmd["command"] = "actuate";
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
   JsonDocument doc;
@@ -59,7 +59,7 @@ void test_actuate_defaults_to_construction_hold_ms(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"]         = "actuate";
+  cmd["command"]         = "actuate";
   cmd["open_angle"] = 45;
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
@@ -80,7 +80,7 @@ void test_append_senml_clears_pending(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"] = "actuate";
+  cmd["command"] = "actuate";
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
   JsonDocument doc1;
@@ -99,7 +99,7 @@ void test_unknown_op_ignored(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"] = "reboot";
+  cmd["command"] = "reboot";
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
   JsonDocument doc;
@@ -113,7 +113,7 @@ void test_sense_record_when_pending(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"] = "actuate";
+  cmd["command"] = "actuate";
   servo.applyCommand(cmd.as<JsonObjectConst>());
 
   JsonDocument doc;
@@ -140,7 +140,7 @@ void test_schedule_cron_entry_fires_when_due(void) {
   snprintf(cron, sizeof(cron), "%d %d * * *", t->tm_min, t->tm_hour);
 
   JsonDocument cmd;
-  cmd["op"]   = "schedule";
+  cmd["command"]   = "schedule";
   cmd["type"] = "cron";
   JsonArray entries = cmd["entries"].to<JsonArray>();
   JsonObject entry  = entries.add<JsonObject>();
@@ -176,7 +176,7 @@ void test_schedule_cron_entry_does_not_refire_same_minute(void) {
   snprintf(cron, sizeof(cron), "%d %d * * *", t->tm_min, t->tm_hour);
 
   JsonDocument cmd;
-  cmd["op"]   = "schedule";
+  cmd["command"]   = "schedule";
   cmd["type"] = "cron";
   JsonArray entries = cmd["entries"].to<JsonArray>();
   JsonObject entry  = entries.add<JsonObject>();
@@ -198,7 +198,7 @@ void test_schedule_cron_type_missing_defaults_to_windows_noop(void) {
   servo.begin();
 
   JsonDocument cmd;
-  cmd["op"] = "schedule";
+  cmd["command"] = "schedule";
   JsonArray entries = cmd["entries"].to<JsonArray>();
   JsonObject entry  = entries.add<JsonObject>();
   entry["id"]    = "e1";

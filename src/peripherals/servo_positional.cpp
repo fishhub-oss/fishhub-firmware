@@ -61,10 +61,10 @@ void ServoPositional::currentMeasurements(std::map<std::string, float>& out) con
 }
 
 void ServoPositional::applyCommand(JsonObjectConst cmd) {
-  const char* op = cmd["op"];
-  if (!op) return;
+  const char* command = cmd["command"];
+  if (!command) return;
 
-  if (strcmp(op, "actuate") == 0) {
+  if (strcmp(command, "actuate") == 0) {
     int openAngle = cmd["open_angle"] | _openAngle;
     int holdMs    = cmd["hold_ms"]    | _holdMs;
 #ifdef ARDUINO
@@ -72,7 +72,7 @@ void ServoPositional::applyCommand(JsonObjectConst cmd) {
                   _name.c_str(), openAngle, holdMs);
 #endif
     _actuate(openAngle, holdMs);
-  } else if (strcmp(op, "schedule") == 0) {
+  } else if (strcmp(command, "schedule") == 0) {
     const char* type = cmd["type"] | "windows";
     if (strcmp(type, "cron") == 0)
       _loadEntries(cmd["entries"].as<JsonArrayConst>());

@@ -120,6 +120,82 @@ build_flags = -DACTUATOR_HEARTBEAT_S=60
 
 ---
 
+### `ServoCR` (`src/peripherals/servo_cr.h/.cpp`)
+
+Drives a continuous-rotation servo motor on a cron-based schedule or via immediate actuation commands.
+
+| Property | Value |
+|---|---|
+| `name()` | Set at construction (e.g. `"feeder0"`) |
+| `intervalMs()` | `1000` ms |
+| `replayCommand()` | `true` — retained MQTT messages re-apply the schedule on reboot |
+
+**`applyCommand(cmd)` accepts two command shapes:**
+
+Immediate actuation:
+```json
+{ "command": "actuate", "rotation_ms": 500 }
+```
+
+Cron schedule:
+```json
+{
+  "command": "schedule",
+  "type": "cron",
+  "entries": [
+    { "id": "e1", "cron": "0 8 * * *", "value": 500 }
+  ]
+}
+```
+
+Each schedule entry fires the servo for `value` milliseconds when the cron expression matches. Sending a new schedule replaces all existing entries.
+
+SenML output on actuation:
+```json
+{"n":"feeder0/rotation","u":"ms","v":500}
+```
+
+---
+
+### `ServoPositional` (`src/peripherals/servo_positional.h/.cpp`)
+
+Drives a positional servo motor (sweeps to an angle then returns to rest) on a cron-based schedule or via immediate actuation commands.
+
+| Property | Value |
+|---|---|
+| `name()` | Set at construction (e.g. `"flap0"`) |
+| `intervalMs()` | `1000` ms |
+| `replayCommand()` | `true` — retained MQTT messages re-apply the schedule on reboot |
+
+**`applyCommand(cmd)` accepts two command shapes:**
+
+Immediate actuation:
+```json
+{ "command": "actuate", "open_angle": 120, "hold_ms": 400 }
+```
+
+Both `open_angle` and `hold_ms` are optional; they fall back to the values set at construction.
+
+Cron schedule:
+```json
+{
+  "command": "schedule",
+  "type": "cron",
+  "entries": [
+    { "id": "e1", "cron": "0 8 * * *", "value": 120 }
+  ]
+}
+```
+
+`value` is the open angle in degrees. Sending a new schedule replaces all existing entries.
+
+SenML output on actuation:
+```json
+{"n":"flap0/angle","u":"deg","v":120}
+```
+
+---
+
 ## `Schedule` (`src/schedule.h/.cpp`)
 
 Time-window–based on/off logic used by `RelayActuator`.
