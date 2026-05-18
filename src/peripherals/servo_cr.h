@@ -37,7 +37,7 @@ private:
   void _actuate(int rotationMs);
   void _persistLastFired();
   void _restoreLastFired();
-  void _loadTriggers(JsonArrayConst arr);
+  void _loadEntries(JsonArrayConst arr);
 
   std::string              _name;
   std::string              _purpose;
@@ -46,7 +46,7 @@ private:
 #ifdef ARDUINO
   Servo                    _servo;
 #endif
-  std::vector<CronTrigger> _triggers;
+  std::vector<CronTrigger> _entries;
 
   bool  _pendingRotation = false;
   int   _lastRotationMs  = 0;

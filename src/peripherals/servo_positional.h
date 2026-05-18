@@ -7,11 +7,13 @@
 #include <string>
 #endif
 
+#include <vector>
 #include <map>
 #include <string>
 #include <ArduinoJson.h>
 #include "peripheral.h"
 #include "../peripheral_serializer_registry.h"
+#include "../cron_trigger.h"
 
 class ServoPositional : public Peripheral {
 public:
@@ -40,17 +42,21 @@ public:
 
 private:
   void _actuate(int openAngle, int holdMs);
+  void _persistLastFired();
+  void _restoreLastFired();
+  void _loadEntries(JsonArrayConst arr);
 
-  std::string _name;
-  std::string _purpose;
-  uint8_t     _pin;
-  int         _openAngle;
-  int         _restAngle;
-  int         _holdMs;
-  int         _sensePin;
+  std::string              _name;
+  std::string              _purpose;
+  uint8_t                  _pin;
+  int                      _openAngle;
+  int                      _restAngle;
+  int                      _holdMs;
+  int                      _sensePin;
 #ifdef ARDUINO
-  Servo       _servo;
+  Servo                    _servo;
 #endif
+  std::vector<CronTrigger> _entries;
 
   bool  _pendingAngle  = false;
   int   _lastAngle     = 0;

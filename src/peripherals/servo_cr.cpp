@@ -23,7 +23,7 @@ bool ServoCR::tick(time_t now) {
   }
 #endif
 
-  for (auto& t : _triggers) {
+  for (auto& t : _entries) {
     if (t.isDue(now)) {
       _actuate(t.value);
       t.markFired(now);
@@ -66,8 +66,10 @@ void ServoCR::applyCommand(JsonObjectConst cmd) {
     Serial.printf("ServoCR '%s': actuate %d ms\n", _name.c_str(), rotationMs);
 #endif
     _actuate(rotationMs);
-  } else if (strcmp(op, "set_triggers") == 0) {
-    _loadTriggers(cmd["triggers"].as<JsonArrayConst>());
+  } else if (strcmp(op, "schedule") == 0) {
+    const char* type = cmd["type"] | "windows";
+    if (strcmp(type, "cron") == 0)
+      _loadEntries(cmd["entries"].as<JsonArrayConst>());
   }
 }
 
@@ -83,8 +85,8 @@ void ServoCR::_actuate(int rotationMs) {
   _pendingRotation = true;
 }
 
-void ServoCR::_loadTriggers(JsonArrayConst arr) {
-  _triggers.clear();
+void ServoCR::_loadEntries(JsonArrayConst arr) {
+  _entries.clear();
   for (JsonObjectConst obj : arr) {
     CronTrigger t = {};
     const char* id   = obj["id"]   | "";
@@ -92,14 +94,14 @@ void ServoCR::_loadTriggers(JsonArrayConst arr) {
     int value        = obj["value"] | 500;
     if (strlen(id) == 0 || !t.parseCron(cron)) {
 #ifdef ARDUINO
-      Serial.printf("ServoCR '%s': skipping invalid trigger\n", _name.c_str());
+      Serial.printf("ServoCR '%s': skipping invalid schedule entry\n", _name.c_str());
 #endif
       continue;
     }
     strncpy(t.id, id, sizeof(t.id) - 1);
     t.value     = value;
     t.lastFired = 0;
-    _triggers.push_back(t);
+    _entries.push_back(t);
   }
   _restoreLastFired();
 }
@@ -108,7 +110,7 @@ void ServoCR::_persistLastFired() {
 #ifdef ARDUINO
   JsonDocument doc;
   JsonObject obj = doc.to<JsonObject>();
-  for (auto& t : _triggers)
+  for (auto& t : _entries)
     obj[t.id] = (long)t.lastFired;
   String json;
   serializeJson(doc, json);
@@ -127,7 +129,7 @@ void ServoCR::_restoreLastFired() {
   if (deserializeJson(doc, json)) return;
 
   JsonObject obj = doc.as<JsonObject>();
-  for (auto& t : _triggers) {
+  for (auto& t : _entries) {
     JsonVariant v = obj[t.id];
     if (!v.isNull())
       t.lastFired = (time_t)v.as<long>();
