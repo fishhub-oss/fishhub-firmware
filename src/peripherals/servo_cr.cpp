@@ -1,22 +1,21 @@
-#include "servo_actuator.h"
+#include "servo_cr.h"
 #ifdef ARDUINO
 #include <Arduino.h>
 #include "nvs_store.h"
 #endif
 #include <ArduinoJson.h>
 
-ServoActuator::ServoActuator(const char* name, uint8_t pin,
-                             int sensePin, const char* purpose)
+ServoCR::ServoCR(const char* name, uint8_t pin, int sensePin, const char* purpose)
   : _name(name), _purpose(purpose), _pin(pin), _sensePin(sensePin) {}
 
-void ServoActuator::begin() {
+void ServoCR::begin() {
 #ifdef ARDUINO
   if (_sensePin >= 0)
     pinMode(_sensePin, INPUT_PULLUP);
 #endif
 }
 
-bool ServoActuator::tick(time_t now) {
+bool ServoCR::tick(time_t now) {
 #ifdef ARDUINO
   if (_sensePin >= 0) {
     _senseValue   = !digitalRead(_sensePin);
@@ -35,7 +34,7 @@ bool ServoActuator::tick(time_t now) {
   return _pendingRotation || _sensePending;
 }
 
-void ServoActuator::appendSenML(JsonArray& records, time_t /*now*/) {
+void ServoCR::appendSenML(JsonArray& records, time_t /*now*/) {
   if (_pendingRotation) {
     JsonObject r = records.add<JsonObject>();
     r["n"] = String(_name.c_str()) + "/rotation";
@@ -52,25 +51,27 @@ void ServoActuator::appendSenML(JsonArray& records, time_t /*now*/) {
   }
 }
 
-void ServoActuator::currentMeasurements(std::map<std::string, float>& out) const {
+void ServoCR::currentMeasurements(std::map<std::string, float>& out) const {
   if (_sensePin >= 0)
     out[_name + "/sense"] = _senseValue ? 1.0f : 0.0f;
 }
 
-void ServoActuator::applyCommand(JsonObjectConst cmd) {
+void ServoCR::applyCommand(JsonObjectConst cmd) {
   const char* op = cmd["op"];
   if (!op) return;
 
   if (strcmp(op, "actuate") == 0) {
     int rotationMs = cmd["rotation_ms"] | 500;
-    Serial.printf("ServoActuator '%s': actuate %d ms\n", _name.c_str(), rotationMs);
+#ifdef ARDUINO
+    Serial.printf("ServoCR '%s': actuate %d ms\n", _name.c_str(), rotationMs);
+#endif
     _actuate(rotationMs);
   } else if (strcmp(op, "set_triggers") == 0) {
     _loadTriggers(cmd["triggers"].as<JsonArrayConst>());
   }
 }
 
-void ServoActuator::_actuate(int rotationMs) {
+void ServoCR::_actuate(int rotationMs) {
 #ifdef ARDUINO
   _servo.attach(_pin);
   _servo.writeMicroseconds(2000);
@@ -82,7 +83,7 @@ void ServoActuator::_actuate(int rotationMs) {
   _pendingRotation = true;
 }
 
-void ServoActuator::_loadTriggers(JsonArrayConst arr) {
+void ServoCR::_loadTriggers(JsonArrayConst arr) {
   _triggers.clear();
   for (JsonObjectConst obj : arr) {
     CronTrigger t = {};
@@ -90,7 +91,9 @@ void ServoActuator::_loadTriggers(JsonArrayConst arr) {
     const char* cron = obj["cron"] | "";
     int value        = obj["value"] | 500;
     if (strlen(id) == 0 || !t.parseCron(cron)) {
-      Serial.printf("ServoActuator '%s': skipping invalid trigger\n", _name.c_str());
+#ifdef ARDUINO
+      Serial.printf("ServoCR '%s': skipping invalid trigger\n", _name.c_str());
+#endif
       continue;
     }
     strncpy(t.id, id, sizeof(t.id) - 1);
@@ -101,7 +104,7 @@ void ServoActuator::_loadTriggers(JsonArrayConst arr) {
   _restoreLastFired();
 }
 
-void ServoActuator::_persistLastFired() {
+void ServoCR::_persistLastFired() {
 #ifdef ARDUINO
   JsonDocument doc;
   JsonObject obj = doc.to<JsonObject>();
@@ -114,7 +117,7 @@ void ServoActuator::_persistLastFired() {
 #endif
 }
 
-void ServoActuator::_restoreLastFired() {
+void ServoCR::_restoreLastFired() {
 #ifdef ARDUINO
   String key  = String("lf_") + _name.c_str();
   String json = nvsStore.get(key.c_str());
