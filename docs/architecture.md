@@ -1,191 +1,290 @@
 # Architecture
 
+## Overview
+
+The FishHub device is **online full-time**. After provisioning it holds a
+persistent TLS MQTT connection to the broker, **publishes sensor readings** and
+**trigger events** over MQTT, and **reacts to inbound MQTT messages** that
+configure peripherals, push automation triggers, set device config, and send
+one-shot/scheduled commands. There is no deep-sleep / wake-and-POST cycle — the
+main loop runs continuously.
+
+HTTP is used **only during provisioning/activation** (device activation and
+MQTT-credential hand-off); it is not used on the steady-state data path.
+
+Peripherals are **not hardcoded**. The server provisions them at runtime over
+MQTT (`peripherals/<name>`, carrying a `kind` and a server-assigned `pin`); the
+firmware reconstructs them through a serializer registry and persists them to
+NVS so they survive reboots without waiting for the broker to redeliver.
+
 ## Source layout
 
 ```
 fishhub-firmware/
-├── platformio.ini              # build environments (nodemcu-32s, native)
+├── platformio.ini              # build environments (nodemcu-32s, native, per-component test envs)
 ├── include/
-│   ├── pins.h                  # GPIO pin definitions
+│   ├── pins.h                  # the two on-board button pins (peripheral pins are server-assigned)
 │   ├── nvs_store.h             # NVSStore class — persistent key-value storage
 │   ├── provisioning.h          # startProvisioning(), ActivationError
-│   ├── peripheral_manager.h    # PeripheralManager + Peripheral interface
+│   ├── peripheral.h            # Peripheral interface
+│   ├── peripheral_manager.h    # PeripheralManager (peripherals + triggers + event queue)
+│   ├── mqtt_client.h           # FishHubMqttClient
+│   ├── schedule.h              # Schedule — windowed value logic for actuators
 │   ├── config.h                # credentials fallback for development (gitignored)
 │   └── config.h.example        # template for config.h
 ├── src/
-│   ├── main.cpp                # entry point: setup() + loop(), state dispatch
+│   ├── main.cpp                # state machine + setup()/loop()
 │   ├── nvs_store.cpp           # NVSStore implementation; global nvsStore instance
-│   ├── provisioning.cpp        # captive portal AP, device activation, status polling
+│   ├── provisioning.cpp        # captive portal AP, HTTP device activation, status polling
 │   ├── wifi_ntp.h/.cpp         # Wi-Fi connection + NTP time sync
-│   ├── http_client.h/.cpp      # HTTP POST for sensor readings with retry
-│   ├── mqtt_client.h/.cpp      # FishHubMqttClient — TLS MQTT, command dispatch
-│   ├── peripheral_manager.cpp  # PeripheralManager implementation
-│   ├── schedule.h/.cpp         # Schedule — time-window + override state for actuators
+│   ├── mqtt_client.cpp         # FishHubMqttClient — TLS MQTT, publish + inbound dispatch
+│   ├── button.h/.cpp           # reset button + display-mode button polling
+│   ├── peripheral_manager.cpp  # PeripheralManager implementation (incl. trigger evaluation)
+│   ├── peripheral_serializer_registry.h/.cpp  # kind -> (de)serializer registry
+│   ├── schedule.cpp            # Schedule implementation
+│   ├── trigger.h/.cpp          # Trigger — condition tree + actions
+│   ├── trigger_event_queue.h/.cpp  # bounded drop-oldest queue of fired-trigger events
+│   ├── cron_trigger.h/.cpp     # reusable 5-field cron entry used by servo peripherals
 │   ├── display/
-│   │   ├── oled_display.h      # OledDisplay class + global oledDisplay instance
-│   │   └── oled_display.cpp    # SSD1306 rendering — MEASUREMENTS + DEBUG modes
+│   │   ├── oled_display.h       # OledDisplay class + global oledDisplay instance
+│   │   └── oled_display.cpp     # SSD1306 rendering — MEASUREMENTS + DEBUG modes
 │   └── peripherals/
-│       ├── ds18b20_sensor.h/.cpp   # DS18B20Sensor — temperature reading via OneWire
-│       └── relay_actuator.h/.cpp   # RelayActuator — GPIO relay driven by Schedule
+│       ├── ds18b20_sensor.h/.cpp     # DS18B20Sensor (kind "ds18b20")
+│       ├── relay_actuator.h/.cpp     # RelayActuator (kind "relay")
+│       ├── servo_cr.h/.cpp           # ServoCR — continuous-rotation servo (kind "servo_cr")
+│       └── servo_positional.h/.cpp   # ServoPositional — positional servo (kind "servo_positional")
 ├── lib/                        # (reserved for local libraries)
-└── test/
-    └── test_senml/
-        └── test_main.cpp       # native unit tests for SenML builder
+└── test/                       # native unit tests (SenML, trigger event queue, servos)
 ```
 
-## Module responsibilities
+> Note: most headers now live under `include/` (not `src/`). Peripheral and
+> trigger-subsystem headers live next to their `.cpp` under `src/`.
 
-### `main.cpp`
-Entry point. Delegates all work to named helpers — no business logic is written inline:
+## State machine
 
-- `boot()` — initialises Serial, NVS, and the reset button pin; logs NVS key status.
-- `provisioningMode()` — calls `startProvisioning()`, which never returns.
-- `connectToWifi()` — calls `connectWifi()` then `waitForNtp()`.
-- `normalOperation()` — registers peripherals, calls `manager.beginAll()` and `mqttClient.begin()`.
-- `handleButton()` — polls the reset button: 3 s hold → `provisioningMode()`; 10 s hold → `nvsStore.clear()` + reboot.
-- `sensorTick()` — calls `mqttClient.loop()`, runs `manager.tickAll()`, and POSTs any resulting SenML payload.
+`main.cpp` runs an explicit state machine rather than a linear boot sequence:
 
-`setup()` drives the linear boot sequence; `loop()` runs `handleButton()` then `sensorTick()` on every iteration.
+```
+            ┌──────────────┐
+            │ PROVISIONING │  startProvisioning() — never returns (reboots on success)
+            └──────┬───────┘
+   not provisioned │   (isProvisioned() == false at boot)
+                   ▼
+            ┌──────────────┐   fail   ┌─────────────┐
+   boot ───▶│ CONNECT_WIFI │─────────▶│ ERROR_RETRY │
+            └──────┬───────┘          └──────┬──────┘
+                ok │                         │ after 10 s → CONNECT_WIFI
+                   ▼                         │
+            ┌──────────────┐   fail          │
+            │   NTP_SYNC   │─────────────────┘
+            └──────┬───────┘
+                ok │
+                   ▼
+        ┌────────────────────┐
+        │  NORMAL_OPERATION  │  init once, then sensorTick() every loop
+        └────────────────────┘
+```
 
-### `nvs_store.h` / `nvs_store.cpp`
-`NVSStore` wraps the Arduino `Preferences` library to provide named key-value storage backed by ESP32 NVS flash. A global `nvsStore` instance is defined in `nvs_store.cpp` and shared across all modules.
+- **PROVISIONING** — entered at boot when `nvsStore.isProvisioned()` is false.
+  Runs the captive portal; never returns (reboots on success).
+- **CONNECT_WIFI** — `connectWifi()`. On failure → `ERROR_RETRY` (re-enters
+  `CONNECT_WIFI` after the backoff).
+- **NTP_SYNC** — `waitForNtp()`. On failure → `ERROR_RETRY` (back to
+  `CONNECT_WIFI`).
+- **NORMAL_OPERATION** — on first entry runs `initNormalOperation()` once
+  (registers serializers, restores peripherals + triggers from NVS, begins
+  peripherals, wires the event queue, connects MQTT). Every loop after that runs
+  `sensorTick()`.
+- **ERROR_RETRY** — waits `ERROR_RETRY_DELAY_MS` (10 s) then transitions to the
+  stored next state.
 
-`isProvisioned()` returns `true` only when the `provisioned` flag is `"1"` **and** all required keys (`wifi_ssid`, `wifi_pass`, `device_id`, `device_jwt`, `mqtt_username`, `mqtt_password`, `mqtt_host`) are present. This implements atomic provisioning: if power is lost mid-write the flag will be absent and the device re-enters AP mode.
+The reset button can re-enter provisioning (3 s hold) or clear NVS and reboot
+(10 s hold) from any state, via `checkButton()`.
 
-`clear()` removes all keys including `provisioned`.
-
-### `provisioning.h` / `provisioning.cpp`
-Captive-portal provisioning and device activation.
-
-- `startProvisioning()` — starts a Wi-Fi AP (`"FishHub-Setup"`, mode `WIFI_AP_STA`) at `192.168.4.1`, serves an HTML form, and never returns. A FreeRTOS task on core 0 scans nearby networks (mutex-protected) to populate the SSID dropdown.
-
-  Two modes are detected at form-submit time based on whether `device_jwt` is present in NVS:
-
-  - **Fresh provisioning** (`device_jwt` absent): saves Wi-Fi credentials, calls `postActivate()`, polls `pollMqttCredentials()`, then writes all NVS keys atomically (setting `provisioned = "1"` last) and reboots.
-  - **Reconfiguration** (`device_jwt` present): writes new Wi-Fi credentials to temporary NVS keys (`wifi_ssid_new`, `wifi_pass_new`), attempts connection, promotes them to real keys and reboots on success, or deletes them and shows an error on failure — existing MQTT credentials are never touched.
-
-- `postActivate(code, serverUrl)` — POSTs `{"code":"..."}` to `SERVER_URL/devices/activate`, returns `{token, deviceId}` on 202 or an `ActivationError`.
-
-- `pollMqttCredentials(deviceId, jwt, serverUrl, out)` — polls `GET /devices/{id}/status` every 2 s for up to 60 s until `status == "ready"`, then fills `out` with `mqtt_username`, `mqtt_password`, `mqtt_host`. Returns `ActivationError::Timeout` if the deadline passes.
-
-- `enum class ActivationError { None, WifiFailed, InvalidCode, ServerError, Timeout }`
-
-### `wifi_ntp.h` / `wifi_ntp.cpp`
-- `connectWifi()` — reads `wifi_ssid` / `wifi_pass` from NVS (falls back to `config.h` defines). Attempts up to 3 connections (10 s timeout each). Halts on total failure.
-- `waitForNtp()` — calls `configTime(0, 0, "pool.ntp.org")` and blocks until `getLocalTime()` succeeds (10 s timeout). Halts on failure.
-
-### `http_client.h` / `http_client.cpp`
-- `postReading(const String& payload)` — reads `device_jwt` from NVS, POSTs the SenML payload to `SERVER_URL/readings` with `Authorization: Bearer <token>`. Normalises `http://` to `https://` for non-local IPs. On a 5xx or network error, retries once after 1 s.
-
-### `mqtt_client.h` / `mqtt_client.cpp`
-`FishHubMqttClient` manages the TLS MQTT connection to HiveMQ Cloud and dispatches inbound commands to `PeripheralManager`.
-
-- `begin(manager)` — reads credentials from NVS (`device_id`, `mqtt_username`, `mqtt_password`, `mqtt_host`; falls back to `config.h` defines for host/port), sets up the TLS root CA (ISRG Root X1), connects, and subscribes to `fishhub/<device_id>/commands/#`.
-- `loop()` — calls `_client.loop()`; reconnects if disconnected (5 s cooldown).
-- On each inbound message, extracts the peripheral name from the last topic segment and calls `_manager->dispatchCommand()`. One-shot peripherals (`replayCommand() == false`) are deduplicated by persisting the last processed command ID in NVS (`cmd_<name>`); idempotent peripherals (schedules) always re-apply.
-
-### `peripheral_manager.h` / `peripheral_manager.cpp`
-`PeripheralManager` owns a list of `Peripheral*` entries and drives them uniformly. See [peripherals.md](peripherals.md) for the full interface and how to add a new peripheral.
-
-- `add(p)` — registers a peripheral.
-- `beginAll()` — calls `begin()` on every peripheral.
-- `tickAll(now, nowMs)` — calls each peripheral's `tick()` when its `intervalMs()` has elapsed; if any return `true`, collects `appendSenML()` output and returns a complete SenML JSON string (with base record). Returns `""` if nothing produced output.
-- `dispatchCommand(name, cmd)` — routes a parsed JSON command to the peripheral matching `name()`.
-- `find(name)` — returns the matching peripheral or `nullptr`.
-
-### `schedule.h` / `schedule.cpp`
-`Schedule` implements time-window–based on/off logic for actuators.
-
-- `loadWindows(windows)` — parses an array of `["HH:MM","HH:MM"]` pairs. Handles overnight windows (e.g. 22:00–06:00). Clears any active override.
-- `isActive(now)` — returns `true` if `now` falls within any window (or if an override is set).
-- `setOverride(state)` — forces a fixed state until the next `loadWindows()` call.
-
-### `peripherals/ds18b20_sensor.h/.cpp`
-`DS18B20Sensor` reads water temperature from a DS18B20 probe on a OneWire bus.
-
-- `name()` returns `"temperature"`.
-- `tick()` reads the sensor; `appendSenML()` emits a record with field `"v"` (Celsius).
-- `intervalMs()` defaults to `DS18B20_INTERVAL_MS` (override via `platformio.ini` build flag; default 30 000 ms).
-
-### `peripherals/relay_actuator.h/.cpp`
-`RelayActuator` drives a GPIO relay using a `Schedule`.
-
-- `name()` returns the name passed at construction (e.g. `"light"`).
-- `applyCommand(cmd)` — parses `windows` (schedule) or `state` (immediate override) from the JSON command and updates the `Schedule`.
-- `tick()` evaluates the schedule every second and sets the GPIO accordingly. Emits a heartbeat SenML record every `ACTUATOR_HEARTBEAT_S` seconds (default 300 s) even when the state is unchanged, so the server always has a recent reading.
-- `replayCommand()` returns `true` — retained MQTT messages are re-applied on reboot, restoring schedule state without a round-trip to the server.
-
-### `display/oled_display.h` / `display/oled_display.cpp`
-
-`OledDisplay` drives a 128×64 SSD1306 OLED over I2C and provides two display modes toggled by `DISPLAY_BUTTON_PIN`. A global `oledDisplay` instance is defined in `oled_display.cpp` and used directly by `main.cpp` and `mqtt_client.cpp`. It is **not** a `Peripheral` and does not go through `PeripheralManager`.
-
-If `begin()` does not detect the SSD1306 (e.g. no display is connected), `_available` is set to `false` and all subsequent calls become no-ops — the firmware continues normally.
-
-**API:**
-
-| Method | Called by | Purpose |
-|---|---|---|
-| `begin()` | `setup()` | Initialises I2C + SSD1306; disables gracefully if not detected |
-| `tick(nowMs)` | `loop()` | Advances MEASUREMENTS slide timer; redraws when needed |
-| `setMode(DisplayMode)` | `checkDisplayButton()` | Switches between `MEASUREMENTS` and `DEBUG` |
-| `setCurrentState(str)` | `setState()` in `main.cpp` | Updates the state label in DEBUG mode |
-| `logEvent(line)` | `mqtt_client.cpp` | Appends a one-line event to the DEBUG ring buffer (16 slots, newest-at-top) |
-| `updateReadings(entries)` | `sensorTick()` in `main.cpp` | Replaces cached peripheral values for MEASUREMENTS slides |
-
-**MEASUREMENTS mode** — cycles through all registered peripheral readings one at a time, 2 s per slide, with the peripheral name on the top row and value in large text below. Shows "Waiting for data…" until the first tick completes.
-
-**DEBUG mode** — shows the current state machine state on an inverted top bar, and a scrolling ring buffer of recent MQTT events (inbound commands, trigger upserts/deletes, outbound readings, reconnects) on the lines below.
-
-### `include/pins.h`
-- `ONE_WIRE_PIN 4` — GPIO pin for the DS18B20 OneWire data line.
-- `RESET_BUTTON_PIN 0` — GPIO 0 (BOOT button, active LOW). Holding for 3 s enters reconfiguration mode; 10 s clears all NVS data.
-- `RELAY_LIGHT_PIN` — GPIO pin for the light relay.
-- `DISPLAY_BUTTON_PIN 18` — mode-toggle button (active LOW, `INPUT_PULLUP`). Short press (< 1 s) cycles MEASUREMENTS ↔ DEBUG. The OLED uses the default ESP32 I2C pins (SDA=21, SCL=22) — `Wire.begin()` is not called manually; the Adafruit SSD1306 library handles I2C initialisation internally.
-
-## Boot flow
+## Boot & loop flow
 
 ```
 setup()
-  ├── boot()
-  │     ├── Serial.begin(115200)
-  │     ├── nvsStore.begin()
-  │     └── pinMode(RESET_BUTTON_PIN, INPUT_PULLUP)
-  ├── nvsStore.isProvisioned() == false → provisioningMode()  ← never returns
-  ├── connectToWifi()
-  │     ├── connectWifi()    — blocks until connected or halts
-  │     └── waitForNtp()     — blocks until UTC time synced or halts
-  └── normalOperation()
-        ├── manager.add(new DS18B20Sensor(...))
-        ├── manager.add(new RelayActuator("light", ...))
-        ├── manager.beginAll()
-        └── mqttClient.begin(manager)
+  ├── Serial.begin(115200)
+  ├── nvsStore.begin()
+  ├── pinMode(RESET_BUTTON_PIN, INPUT_PULLUP)
+  ├── pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLDOWN)
+  ├── oledDisplay.begin()
+  ├── log NVS key status
+  └── state = isProvisioned() ? CONNECT_WIFI : PROVISIONING
 
 loop()
-  ├── handleButton()   — 3s → provisioningMode(); 10s → clear + reboot
-  └── sensorTick()
-        ├── mqttClient.loop()           — keep MQTT alive, dispatch inbound commands
-        ├── manager.tickAll(now, nowMs) — tick each peripheral on its interval
-        └── postReading(payload)        — POST SenML to server if any data produced
+  ├── checkButton()          — reset button: 3 s → provisioning; 10 s → clear NVS + reboot
+  ├── checkDisplayButton()   — short press toggles OLED MEASUREMENTS ↔ DEBUG
+  ├── runState()             — dispatch on the current state
+  └── oledDisplay.tick(millis())
+
+initNormalOperation()        (runs once on first NORMAL_OPERATION entry)
+  ├── register serializers   — "relay", "ds18b20", "servo_cr", "servo_positional"
+  ├── restorePeripherals()   — rebuild peripherals from NVS "peripherals" via the registry
+  ├── restoreTriggers()      — rebuild triggers from NVS "trig_index" + "tr_<prefix>"
+  ├── manager.beginAll()
+  ├── manager.setEventQueue(eventQueue)
+  └── mqttClient.begin(manager, eventQueue)
+
+sensorTick()                 (every loop while in NORMAL_OPERATION)
+  ├── mqttClient.loop()              — service MQTT, reconnect if needed, drain event queue
+  ├── manager.tickAll(now, millis()) — evaluate triggers, then tick peripherals → SenML or ""
+  ├── if payload: mqttClient.publishReading(payload) + refresh OLED MEASUREMENTS
+  └── mqttClient.drainEventQueue()   — flush any queued trigger events
 ```
 
-## Command flow (MQTT → peripheral)
+## MQTT topic topology
 
-```
-HiveMQ Cloud
-  └── topic: fishhub/<device_id>/commands/<peripheral_name>
-        └── FishHubMqttClient::onMessage()
-              ├── parse JSON
-              ├── deduplicate (one-shot peripherals only, via NVS)
-              └── PeripheralManager::dispatchCommand(name, cmd)
-                    └── peripheral->applyCommand(cmd)
-                          └── (RelayActuator) Schedule::loadWindows() or setOverride()
-```
+All topics are namespaced `fishhub/<device_id>/…`. The connection is TLS
+(ISRG Root X1 CA, port 8883 on HiveMQ Cloud) when `MQTT_TLS` is defined;
+plain TCP otherwise (e.g. a self-hosted broker behind a TCP proxy).
+
+**Subscribes (inbound):**
+
+| Topic | Purpose |
+|---|---|
+| `…/commands/<name>` | One-shot or immediate command to a peripheral. Requires an `id`; one-shot peripherals (`replayCommand() == false`) are de-duplicated via NVS `cmd_<name>`. |
+| `…/peripherals/<name>` | Provision a peripheral (`op: "create"` with `kind` + `pin` + config, or `op: "delete"`). Persisted to NVS. |
+| `…/triggers/<id>` | Automation rule upsert/delete (`op: "upsert"` / `"delete"`). Retained; persisted to NVS. |
+| `…/config` | Device config — currently `timezone`; persisted to NVS and applied via `setenv("TZ", …)`. |
+
+**Publishes (outbound):**
+
+| Topic | Purpose |
+|---|---|
+| `…/readings` | SenML JSON batch produced by `PeripheralManager::tickAll()`. |
+| `…/trigger_events` | One message per fired trigger (`trigger_event_id`, `trigger_id`, `device_id`, `fired_at`, `readings[]`). |
+
+Reconnect uses a 5 s cooldown; the client buffer is 1024 bytes and keep-alive
+is 30 s.
+
+## Tick cycle: triggers then peripherals
+
+`PeripheralManager::tickAll(now, nowMs)` does two things, in order:
+
+1. **Trigger evaluation.** It builds a `values` map by calling
+   `currentMeasurements()` on every peripheral, then evaluates each enabled
+   `Trigger` against it. When a trigger fires, its actions are dispatched
+   **immediately** via `dispatchCommand()` (so the command is applied before the
+   peripheral tick loop drives the hardware), and a `TriggerEvent` is pushed onto
+   the bounded event queue for later publish.
+2. **Peripheral ticks.** Each peripheral whose `intervalMs()` has elapsed is
+   `tick()`ed; those that report new data contribute SenML records via
+   `appendSenML()`. If any produced data, a base record
+   (`bn:"fishhub/device/"`, `bt:<now>`) is prepended and the batch is returned as
+   a JSON string (empty string otherwise).
+
+## Trigger engine
+
+A `Trigger` is a server-pushed automation rule. It is independent of the
+`Peripheral` interface — `PeripheralManager` owns a separate list of triggers and
+evaluates them at the top of each `tickAll()`.
+
+- **Condition** is a recursive JSON expression tree. Every node has an `op`:
+  `value` (reads a named measurement), `literal`, `not`, `and`, `or`
+  (short-circuiting), the comparisons `lt`/`lte`/`gt`/`gte`/`eq`, and the
+  arithmetic ops `add`/`sub`/`mul`/`div`. `evaluate()` returns a float; any
+  non-zero, non-NaN result is truthy. Unknown ops and division-by-zero return 0.
+- **Actions** are an array of `{"type":"peripheral_action","config":{…}}` where
+  `config.peripheral` names the target and the rest of `config` is the command
+  payload dispatched to that peripheral.
+- **Cooldown** (`cooldown_s`, default 60) suppresses re-firing within the window.
+- **Firing** returns a `TriggerFired` struct to `tickAll()`, which performs the
+  dispatch and enqueues the event. The trigger does not dispatch or publish
+  directly.
+
+`TriggerEventQueue` is a fixed-capacity ring buffer (`TRIGGER_EVENT_QUEUE_CAPACITY`,
+drop-oldest on overflow). `trigger_event_id` is a deterministic base64 of
+`<trigger_id>:<fired_at>`; the server deduplicates on `(trigger_id, fired_at)`,
+so redelivery after a reconnect is safe.
+
+See [peripherals.md](peripherals.md) for the exact trigger MQTT payload shapes
+and the condition-tree reference.
+
+## Peripheral model
+
+Peripherals implement the `Peripheral` interface (`include/peripheral.h`) and are
+driven uniformly by `PeripheralManager`. Each peripheral exposes:
+
+- `kind()` — firmware driver class (`"relay"`, `"ds18b20"`, `"servo_cr"`,
+  `"servo_positional"`); used to pick a serializer.
+- `purpose()` — optional application label (e.g. a feeder/light/heater meaning);
+  no firmware logic inspects it.
+- `name()` — unique id, used as the MQTT topic segment and SenML field prefix.
+- `currentMeasurements(out)` — contributes values to the snapshot used for
+  trigger evaluation.
+- `replayCommand()` — `true` for idempotent peripherals (schedule-driven), so
+  retained commands re-apply on reboot; `false` for one-shot peripherals, which
+  are de-duplicated by command `id` in NVS.
+
+Each `kind` registers a `PeripheralSerializer` in
+`peripheralSerializerRegistry`, which knows how to serialize a live peripheral
+to JSON and reconstruct one from JSON. This is what makes runtime provisioning
+and NVS restore work without hardcoding peripherals in `main.cpp`.
+
+`PeripheralManager::add(peripheral, pin)` takes ownership of the pointer
+(`remove()` deletes it). The manager also owns triggers (`addTrigger`,
+`removeTrigger`, `findTrigger`, `forEachTrigger`) and the injected
+`TriggerEventQueue` (`setEventQueue`).
+
+## NVS keys
+
+| Key | Content |
+|---|---|
+| `wifi_ssid`, `wifi_pass` | Wi-Fi credentials |
+| `device_id`, `device_jwt` | Device identity / activation token |
+| `mqtt_username`, `mqtt_password`, `mqtt_host` | Broker credentials (from activation) |
+| `provisioned` | `"1"` only when all required keys are present (atomic provisioning flag) |
+| `peripherals` | JSON array of provisioned peripherals (`name`, `kind`, `pin`, + kind-specific fields) |
+| `trig_index` | JSON array of 10-char trigger-id prefixes (enumeration index) |
+| `tr_<prefix>` | Full trigger JSON in upsert shape (key ≤ 15-char `Preferences` limit) |
+| `cmd_<name>` | Last processed command id for one-shot peripherals (dedup) |
+| `timezone` | IANA TZ string from the `config` topic |
+
+Servo peripherals additionally persist their last-fired cron state so scheduled
+actuations are idempotent across reboots.
+
+## Provisioning (HTTP)
+
+The only HTTP on the device. `startProvisioning()` runs a Wi-Fi AP
+(`"FishHub-Setup"`, `192.168.4.1`) serving a captive-portal form; a background
+FreeRTOS task scans nearby SSIDs.
+
+- **Fresh provisioning** (`device_jwt` absent): saves Wi-Fi creds, `POST`s the
+  activation code to `…/devices/activate`, polls `GET …/devices/{id}/status`
+  until `ready`, writes all NVS keys atomically (`provisioned = "1"` last), and
+  reboots.
+- **Reconfiguration** (`device_jwt` present): writes new Wi-Fi creds to temporary
+  NVS keys, tries to connect, and either promotes them and reboots or rolls back
+  and shows an error — existing MQTT credentials are never touched.
+
+## OLED display
+
+`OledDisplay` drives a 128×64 SSD1306 over I2C and is **not** a `Peripheral`. It
+degrades to a no-op if no panel is detected. `DISPLAY_BUTTON_PIN` (GPIO 19,
+active-HIGH, `INPUT_PULLDOWN`) short-press toggles modes:
+
+- **MEASUREMENTS** — cycles through current peripheral readings.
+- **DEBUG** — shows the current state-machine state plus a scrolling ring buffer
+  of recent MQTT events (inbound commands, peripheral/trigger upserts & deletes,
+  outbound readings, reconnects).
 
 ## PlatformIO environments
 
 | Environment | Target | Purpose |
 |---|---|---|
 | `nodemcu-32s` | ESP32 hardware | Default build + flash |
-| `native` | Host machine | Unit tests (`pio test -e native`) |
+| `native` | Host machine | SenML unit tests (`pio test -e native`) |
+| `test_trigger_event_queue` | Host machine | Trigger event queue tests |
+| `test_servo_cr` | Host machine | Continuous-rotation servo tests |
+| `test_servo_positional` | Host machine | Positional servo tests |
 
-The `native` environment excludes all `src/` files (`build_src_filter = -<*>`) and only compiles `test/` code, avoiding Arduino/ESP32 SDK dependencies.
+The host environments use `build_src_filter = -<*>` and stubs under `test/stubs`
+so they compile without the Arduino/ESP32 SDK.
+
+## Libraries
+
+OneWire, DallasTemperature, ArduinoJson v7, PubSubClient (MQTT), Adafruit
+SSD1306 + Adafruit GFX (OLED), ESP32Servo. See `platformio.ini` for pinned
+versions.
