@@ -1,0 +1,94 @@
+# Triggered by pushing a version tag (e.g. v1.2.3).
+#
+# Required GitHub Actions secrets:
+#   S3_ENDPOINT       — Railway Bucket endpoint URL (e.g. https://fly.storage.tigris.dev)
+#   S3_REGION         — Bucket region (e.g. auto)
+#   S3_BUCKET         — Bucket name
+#   S3_ACCESS_KEY_ID  — Access key ID
+#   S3_SECRET_ACCESS_KEY — Secret access key
+#
+# Notes:
+#   - The bucket is private; objects are not publicly accessible.
+#     The server mints presigned GET URLs at update time (issue 3.2).
+#   - Railway/Tigris uses path-style addressing when --endpoint-url is provided,
+#     which is what the aws CLI sends by default with that flag.
+
+name: Firmware Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Extract version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Build firmware
+        run: PLATFORMIO_BUILD_FLAGS="-D FIRMWARE_VERSION='\"${VERSION}\"'" pio run -e nodemcu-32s
+
+      - name: Compute sha256 and size
+        run: |
+          BIN=.pio/build/nodemcu-32s/firmware.bin
+          echo "SHA256=$(sha256sum ${BIN} | awk '{print $1}')" >> $GITHUB_ENV
+          echo "SIZE=$(stat -c%s ${BIN})" >> $GITHUB_ENV
+
+      - name: Generate manifest.json
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          manifest = {
+              "version": os.environ["VERSION"],
+              "sha256": os.environ["SHA256"],
+              "size": int(os.environ["SIZE"]),
+              "object_key": f"firmware/{os.environ['VERSION']}/firmware.bin",
+          }
+          with open("manifest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+          print(json.dumps(manifest, indent=2))
+          EOF
+
+      - name: Upload to Railway Bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.S3_REGION }}
+        run: |
+          BIN=.pio/build/nodemcu-32s/firmware.bin
+          aws s3 cp "${BIN}" \
+            "s3://${{ secrets.S3_BUCKET }}/firmware/${VERSION}/firmware.bin" \
+            --endpoint-url "${{ secrets.S3_ENDPOINT }}"
+          aws s3 cp manifest.json \
+            "s3://${{ secrets.S3_BUCKET }}/firmware/${VERSION}/manifest.json" \
+            --endpoint-url "${{ secrets.S3_ENDPOINT }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            .pio/build/nodemcu-32s/firmware.bin \
+            manifest.json \
+            --title "Firmware ${GITHUB_REF_NAME}" \
+            --generate-notes
