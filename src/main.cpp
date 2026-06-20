@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "pins.h"
+#include "version.h"
 #include "nvs_store.h"
 #include "provisioning.h"
 #include "wifi_ntp.h"
@@ -254,7 +255,7 @@ static void runState()
 void setup()
 {
   Serial.begin(115200);
-  Serial.println("FishHub firmware booting...");
+  Serial.printf("FishHub firmware booting — version %s\n", FIRMWARE_VERSION);
   nvsStore.begin();
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
   pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLDOWN);
