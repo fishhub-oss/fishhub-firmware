@@ -14,6 +14,7 @@ public:
   void loop();
   void drainEventQueue();
   bool publishReading(const String& payload);
+  void publishStatus(const char* lastUpdateResult = nullptr);
 
 private:
   void connect();

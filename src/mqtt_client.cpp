@@ -1,6 +1,7 @@
 #include "mqtt_client.h"
 #include "nvs_store.h"
 #include "config.h"
+#include "version.h"
 #include "peripherals/relay_actuator.h"
 #include "peripherals/ds18b20_sensor.h"
 #include "peripheral_serializer_registry.h"
@@ -171,6 +172,8 @@ void FishHubMqttClient::connect()
   _client.subscribe(configTopic.c_str());
   _client.subscribe(triggersTopic.c_str());
   Serial.printf("MQTT: connected, subscribed to commands, peripherals, config and triggers topics\n");
+
+  publishStatus();
 }
 
 void FishHubMqttClient::onMessage(char *topic, byte *payload, unsigned int len)
@@ -366,6 +369,24 @@ bool FishHubMqttClient::publishReading(const String &payload)
     }
   }
   return ok;
+}
+
+void FishHubMqttClient::publishStatus(const char *lastUpdateResult)
+{
+  if (!_client.connected())
+    return;
+
+  JsonDocument doc;
+  doc["firmware_version"] = FIRMWARE_VERSION;
+  if (lastUpdateResult && strlen(lastUpdateResult) > 0)
+    doc["last_update_result"] = lastUpdateResult;
+
+  char payload[128];
+  size_t len = serializeJson(doc, payload, sizeof(payload));
+
+  String topic = "fishhub/" + _deviceId + "/status";
+  bool ok = _client.publish(topic.c_str(), (const uint8_t *)payload, len, /*retained=*/true);
+  Serial.printf("MQTT: publishStatus %s (%s)\n", payload, ok ? "OK" : "FAILED");
 }
 
 void FishHubMqttClient::onConfig(byte *payload, unsigned int len)
