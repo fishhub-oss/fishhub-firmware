@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_defaults.h"
 #include <Arduino.h>
 #include <WiFiClientSecure.h>
 #include <WiFiClient.h>

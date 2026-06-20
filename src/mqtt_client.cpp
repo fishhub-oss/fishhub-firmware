@@ -1,6 +1,6 @@
 #include "mqtt_client.h"
 #include "nvs_store.h"
-#include "config.h"
+#include "config_defaults.h"
 #include "version.h"
 #include "peripherals/relay_actuator.h"
 #include "peripherals/ds18b20_sensor.h"
