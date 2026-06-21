@@ -175,6 +175,14 @@ void FishHubMqttClient::connect()
   _client.subscribe(triggersTopic.c_str());
   Serial.printf("MQTT: connected, subscribed to commands, peripherals, config and triggers topics\n");
 
+  // Confirm OTA health — new firmware reached MQTT connect, so it's good.
+  if (nvsStore.get("fw_pending") == "1") {
+    nvsStore.remove("fw_pending");
+    nvsStore.remove("fw_boot_count");
+    nvsStore.remove("fw_prev_part");
+    Serial.println("[OTA] Firmware validated — MQTT connected");
+  }
+
   publishStatus();
 }
 

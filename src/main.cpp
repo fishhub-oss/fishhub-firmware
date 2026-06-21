@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <esp_ota_ops.h>
 #include "pins.h"
 #include "version.h"
+#include "ota_update.h"
 #include "nvs_store.h"
 #include "provisioning.h"
 #include "wifi_ntp.h"
@@ -25,6 +27,7 @@ enum class State
   CONNECT_WIFI,
   NTP_SYNC,
   NORMAL_OPERATION,
+  UPDATE_FIRMWARE,
   ERROR_RETRY,
 };
 
@@ -47,6 +50,8 @@ static const char *stateName(State s)
     return "NTP_SYNC";
   case State::NORMAL_OPERATION:
     return "NORMAL_OPERATION";
+  case State::UPDATE_FIRMWARE:
+    return "UPDATE_FIRMWARE";
   case State::ERROR_RETRY:
     return "ERROR_RETRY";
   }
@@ -69,6 +74,74 @@ static void enterErrorRetry(State next, const char *reason)
   errorRetryUntil = millis() + ERROR_RETRY_DELAY_MS;
   errorNextState = next;
   setState(State::ERROR_RETRY);
+}
+
+// ─── OTA update ───────────────────────────────────────────────────────────────
+
+static const int OTA_MAX_BOOT_ATTEMPTS = 3;
+
+struct OtaParams { String url; String sha256; };
+static OtaParams pendingOta;
+
+static void startOtaUpdate(const String& url, const String& sha256) {
+  pendingOta = {url, sha256};
+  setState(State::UPDATE_FIRMWARE);
+}
+
+// Called early in setup() — rolls back to the previous OTA slot if the new
+// firmware has failed to confirm healthy (MQTT connect) within the allowed boots.
+static void checkOtaRollback() {
+  if (nvsStore.get("fw_pending") != "1") return;
+
+  int count = nvsStore.get("fw_boot_count").toInt() + 1;
+  Serial.printf("[OTA] Boot attempt %d/%d after update\n", count, OTA_MAX_BOOT_ATTEMPTS);
+
+  if (count < OTA_MAX_BOOT_ATTEMPTS) {
+    nvsStore.set("fw_boot_count", String(count));
+    return;
+  }
+
+  Serial.println("[OTA] Max boot attempts reached — rolling back");
+  String prevLabel = nvsStore.get("fw_prev_part");
+  nvsStore.remove("fw_pending");
+  nvsStore.remove("fw_boot_count");
+  nvsStore.remove("fw_prev_part");
+
+  if (!prevLabel.isEmpty()) {
+    const esp_partition_t* prev = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, prevLabel.c_str());
+    if (prev) {
+      esp_ota_set_boot_partition(prev);
+      Serial.println("[OTA] Rebooting into previous firmware");
+      delay(100);
+      ESP.restart();
+    }
+  }
+  Serial.println("[OTA] Rollback failed — previous partition not found");
+}
+
+static void runUpdateFirmware() {
+  Serial.println("[OTA] Entering UPDATE_FIRMWARE state");
+
+  // Save the current partition label for rollback before touching anything.
+  const esp_partition_t* current = esp_ota_get_running_partition();
+
+  bool ok = performOtaUpdate(pendingOta.url, pendingOta.sha256);
+
+  if (!ok) {
+    Serial.println("[OTA] Update failed — returning to NORMAL_OPERATION");
+    setState(State::NORMAL_OPERATION);
+    return;
+  }
+
+  // Flash succeeded. Set rollback guards before rebooting so the new firmware
+  // must confirm health (MQTT connect) within OTA_MAX_BOOT_ATTEMPTS boots.
+  nvsStore.set("fw_prev_part", String(current->label));
+  nvsStore.set("fw_pending",   "1");
+  nvsStore.set("fw_boot_count","0");
+  Serial.println("[OTA] Rebooting into new firmware");
+  delay(500);
+  ESP.restart();
 }
 
 // ─── normal operation helpers ─────────────────────────────────────────────────
@@ -165,6 +238,14 @@ static void initNormalOperation()
   manager.setEventQueue(eventQueue);
   mqttClient.begin(manager, eventQueue);
   normalOperationInitDone = true;
+
+  // Test hook: define OTA_TEST_URL and OTA_TEST_SHA256 as build flags to
+  // trigger a one-shot OTA on first boot into NORMAL_OPERATION. Removed in 3.3
+  // when the MQTT manifest replaces this path.
+#if defined(OTA_TEST_URL) && defined(OTA_TEST_SHA256)
+  Serial.println("[OTA] Test trigger: starting update from compile-time URL");
+  startOtaUpdate(OTA_TEST_URL, OTA_TEST_SHA256);
+#endif
 }
 
 static void sensorTick()
@@ -243,6 +324,10 @@ static void runState()
     sensorTick();
     break;
 
+  case State::UPDATE_FIRMWARE:
+    runUpdateFirmware();
+    break;
+
   case State::ERROR_RETRY:
     if (millis() >= errorRetryUntil)
       setState(errorNextState);
@@ -257,6 +342,7 @@ void setup()
   Serial.begin(115200);
   Serial.printf("FishHub firmware booting — version %s\n", FIRMWARE_VERSION);
   nvsStore.begin();
+  checkOtaRollback();
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
   pinMode(DISPLAY_BUTTON_PIN, INPUT_PULLDOWN);
   oledDisplay.begin();
