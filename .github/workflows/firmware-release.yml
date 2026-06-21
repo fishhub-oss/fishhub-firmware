@@ -45,7 +45,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
       - name: Build firmware
-        run: PLATFORMIO_BUILD_FLAGS="-D FIRMWARE_VERSION='\"${VERSION}\"'" pio run -e nodemcu-32s
+        run: PLATFORMIO_BUILD_FLAGS="-D MQTT_TLS -D FIRMWARE_VERSION='\"${VERSION}\"' -D SERVER_URL='\"${{ vars.SERVER_URL }}\"'" pio run -e nodemcu-32s
 
       - name: Compute sha256 and size
         run: |

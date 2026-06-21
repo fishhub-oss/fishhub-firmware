@@ -1,21 +1,32 @@
+// Developer override for local builds.
+//
+// Copy this file to include/config.h, fill in your values, and build.
+// config.h is gitignored and never required — config_defaults.h provides
+// safe empty defaults so the firmware compiles and runs without it (CI,
+// fully-provisioned devices where NVS holds all runtime values).
+//
+// Values in config.h take precedence over config_defaults.h; NVS values
+// take precedence over both at runtime (after provisioning).
+
 #pragma once
 
 #define WIFI_SSID     "your-ssid"
 #define WIFI_PASSWORD "your-password"
 
-// MQTT broker
-// Define MQTT_TLS to connect with TLS (e.g. HiveMQ Cloud on 8883).
-// Leave it undefined for plain TCP (e.g. self-hosted EMQX via TCP proxy).
+// MQTT broker — define MQTT_TLS to connect with TLS (e.g. HiveMQ Cloud).
+// Leave it undefined for plain TCP (e.g. a self-hosted broker).
 #define MQTT_TLS
-#define MQTT_HOST    "your-broker.hivemq.cloud"
-#define MQTT_PORT    8883
+#define MQTT_HOST     "your-broker.hivemq.cloud"
+#define MQTT_PORT     8883
 
-// Device credentials — populated automatically by provisioning; set manually for dev
-#define DEVICE_ID    ""
+// Device identity — set automatically by provisioning; fill in for dev builds.
+#define DEVICE_ID     ""
 
-// Sensor polling intervals (milliseconds)
-#define DS18B20_INTERVAL_MS 30000
+// Server URL used during device activation (provisioning flow only).
+#define SERVER_URL    "https://your-server.example.com"
 
-// How often actuator state is written to InfluxDB even when unchanged (seconds).
-// Default is 300 (5 min). Override here to change it.
+// Sensor polling interval in milliseconds (default: 30000).
+// #define DS18B20_INTERVAL_MS 30000
+
+// How often actuator state is written even when unchanged, in seconds (default: 300).
 // #define ACTUATOR_HEARTBEAT_S 300

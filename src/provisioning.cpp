@@ -1,7 +1,7 @@
 #include "provisioning.h"
 #include "nvs_store.h"
 #include "button.h"
-#include "config.h"
+#include "config_defaults.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HTTPClient.h>

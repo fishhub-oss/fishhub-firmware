@@ -3,7 +3,7 @@
 #include <time.h>
 #include "wifi_ntp.h"
 #include "nvs_store.h"
-#include "config.h"
+#include "config_defaults.h"
 
 static const int WIFI_TIMEOUT_MS  = 10000;
 static const int WIFI_MAX_RETRIES = 3;

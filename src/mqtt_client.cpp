@@ -1,6 +1,6 @@
 #include "mqtt_client.h"
 #include "nvs_store.h"
-#include "config.h"
+#include "config_defaults.h"
 #include "version.h"
 #include "peripherals/relay_actuator.h"
 #include "peripherals/ds18b20_sensor.h"
@@ -58,7 +58,9 @@ void FishHubMqttClient::begin(PeripheralManager &manager, TriggerEventQueue &eve
   _mqttUsername = nvsStore.get("mqtt_username");
   _mqttPassword = nvsStore.get("mqtt_password");
 
-  _mqttHost = MQTT_HOST;
+  _mqttHost = nvsStore.get("mqtt_host");
+  if (_mqttHost.isEmpty())
+    _mqttHost = MQTT_HOST;
   _mqttPort = MQTT_PORT;
 
 #ifdef MQTT_TLS
