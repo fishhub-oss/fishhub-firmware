@@ -31,6 +31,10 @@ public:
   // Entry point for inbound MQTT commands. Sensors may leave this as the default no-op.
   virtual void applyCommand(JsonObjectConst cmd) {}
 
+  // Returns true while the peripheral has an actuation in progress or uncommitted state
+  // that should be reported before a reboot. Used as a safe-point gate for OTA updates.
+  virtual bool isBusy() const { return false; }
+
   // Returns true if retained/redelivered commands should always be re-applied (default).
   // Idempotent peripherals (schedules, state) return true.
   // One-shot peripherals (feeder, doser) override to false — the MQTT client will

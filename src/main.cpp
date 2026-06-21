@@ -76,6 +76,9 @@ static void enterErrorRetry(State next, const char *reason)
   setState(State::ERROR_RETRY);
 }
 
+// Forward declaration — mqttClient is defined in the normal operation section below.
+static FishHubMqttClient mqttClient;
+
 // ─── OTA update ───────────────────────────────────────────────────────────────
 
 static const int OTA_MAX_BOOT_ATTEMPTS = 3;
@@ -130,6 +133,7 @@ static void runUpdateFirmware() {
 
   if (!ok) {
     Serial.println("[OTA] Update failed — returning to NORMAL_OPERATION");
+    mqttClient.publishStatus("failed:flash");
     setState(State::NORMAL_OPERATION);
     return;
   }
@@ -147,7 +151,6 @@ static void runUpdateFirmware() {
 // ─── normal operation helpers ─────────────────────────────────────────────────
 
 static PeripheralManager manager;
-static FishHubMqttClient mqttClient;
 static TriggerEventQueue eventQueue;
 static bool normalOperationInitDone = false;
 
@@ -238,20 +241,26 @@ static void initNormalOperation()
   manager.setEventQueue(eventQueue);
   mqttClient.begin(manager, eventQueue);
   normalOperationInitDone = true;
-
-  // Test hook: define OTA_TEST_URL and OTA_TEST_SHA256 as build flags to
-  // trigger a one-shot OTA on first boot into NORMAL_OPERATION. Removed in 3.3
-  // when the MQTT manifest replaces this path.
-#if defined(OTA_TEST_URL) && defined(OTA_TEST_SHA256)
-  Serial.println("[OTA] Test trigger: starting update from compile-time URL");
-  startOtaUpdate(OTA_TEST_URL, OTA_TEST_SHA256);
-#endif
 }
 
 static void sensorTick()
 {
   unsigned long t0 = millis();
   mqttClient.loop();
+
+  // Safe-point gate: trigger OTA only when no peripheral has uncommitted state
+  // and the trigger event queue is fully drained.
+  if (mqttClient.hasPendingUpdate() && !manager.anyBusy() && eventQueue.empty()) {
+    String url    = mqttClient.pendingUpdateUrl();
+    String sha256 = mqttClient.pendingUpdateSha256();
+    String nonce  = mqttClient.pendingUpdateNonce();
+    mqttClient.clearPendingUpdate();
+    // Persist nonce before flashing so a failed flash doesn't re-trigger on reboot.
+    nvsStore.set("fw_nonce", nonce);
+    mqttClient.publishStatus("updating");
+    startOtaUpdate(url, sha256);
+    return;
+  }
   unsigned long t1 = millis();
 
   time_t now = time(nullptr);

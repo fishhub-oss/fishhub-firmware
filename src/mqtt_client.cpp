@@ -2,6 +2,7 @@
 #include "nvs_store.h"
 #include "config_defaults.h"
 #include "version.h"
+#include "semver.h"
 #include "peripherals/relay_actuator.h"
 #include "peripherals/ds18b20_sensor.h"
 #include "peripheral_serializer_registry.h"
@@ -169,11 +170,13 @@ void FishHubMqttClient::connect()
   String peripheralsTopic = "fishhub/" + _deviceId + "/peripherals/#";
   String configTopic = "fishhub/" + _deviceId + "/config";
   String triggersTopic = "fishhub/" + _deviceId + "/triggers/#";
+  String firmwareTopic = "fishhub/" + _deviceId + "/firmware";
   _client.subscribe(cmdTopic.c_str());
   _client.subscribe(peripheralsTopic.c_str());
   _client.subscribe(configTopic.c_str());
   _client.subscribe(triggersTopic.c_str());
-  Serial.printf("MQTT: connected, subscribed to commands, peripherals, config and triggers topics\n");
+  _client.subscribe(firmwareTopic.c_str());
+  Serial.printf("MQTT: connected, subscribed to commands, peripherals, config, triggers and firmware topics\n");
 
   // Confirm OTA health — new firmware reached MQTT connect, so it's good.
   if (nvsStore.get("fw_pending") == "1") {
@@ -181,6 +184,8 @@ void FishHubMqttClient::connect()
     nvsStore.remove("fw_boot_count");
     nvsStore.remove("fw_prev_part");
     Serial.println("[OTA] Firmware validated — MQTT connected");
+    publishStatus("ok");
+    return; // publishStatus already called; skip the default call below
   }
 
   publishStatus();
@@ -198,6 +203,12 @@ void FishHubMqttClient::onMessage(char *topic, byte *payload, unsigned int len)
   if (rest == "config")
   {
     onConfig(payload, len);
+    return;
+  }
+
+  if (rest == "firmware")
+  {
+    onFirmwareManifest(payload, len);
     return;
   }
 
@@ -520,4 +531,50 @@ void FishHubMqttClient::onTriggerConfig(const String &id, byte *payload, unsigne
   }
 
   Serial.printf("MQTT: unknown op '%s' on triggers/%s\n", op, id.c_str());
+}
+
+void FishHubMqttClient::onFirmwareManifest(byte* payload, unsigned int len)
+{
+  if (len == 0)
+    return;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len))
+  {
+    Serial.println("[OTA] Bad JSON on firmware topic — ignored");
+    return;
+  }
+
+  const char* version = doc["version"];
+  const char* url     = doc["url"];
+  const char* sha256  = doc["sha256"];
+  const char* nonce   = doc["nonce"];
+
+  if (!version || !url || !sha256 || !nonce)
+  {
+    Serial.println("[OTA] Firmware manifest missing required fields — ignored");
+    return;
+  }
+
+  // Nonce dedup: ignore if we already processed this nonce.
+  String storedNonce = nvsStore.get("fw_nonce");
+  if (storedNonce == nonce)
+  {
+    Serial.printf("[OTA] Manifest nonce %s already processed — ignored\n", nonce);
+    return;
+  }
+
+  // Semver check: ignore if the manifest version is not newer than current.
+  if (!semverGreater(version, FIRMWARE_VERSION))
+  {
+    Serial.printf("[OTA] Manifest version %s is not newer than current %s — ignored\n",
+                  version, FIRMWARE_VERSION);
+    return;
+  }
+
+  Serial.printf("[OTA] Newer firmware available: %s (current: %s)\n", version, FIRMWARE_VERSION);
+  _pendingUpdateUrl    = String(url);
+  _pendingUpdateSha256 = String(sha256);
+  _pendingUpdateNonce  = String(nonce);
+  _hasPendingUpdate    = true;
 }

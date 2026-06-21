@@ -39,6 +39,7 @@ public:
   int         holdMs()    const          { return _holdMs; }
 
   bool replayCommand() const override { return false; }
+  bool isBusy()        const override { return _pendingAngle || _sensePending; }
 
 private:
   void _actuate(int openAngle, int holdMs);

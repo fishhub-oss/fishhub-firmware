@@ -155,3 +155,10 @@ Trigger* PeripheralManager::findTrigger(const std::string& id) const {
 void PeripheralManager::forEachTrigger(std::function<void(Trigger*)> fn) const {
   for (auto* t : _triggers) fn(t);
 }
+
+bool PeripheralManager::anyBusy() const {
+  for (const auto& e : _entries) {
+    if (e.peripheral->isBusy()) return true;
+  }
+  return false;
+}
