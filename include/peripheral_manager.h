@@ -62,6 +62,9 @@ public:
   // Iterates all triggers, calling fn(trigger) for each.
   void forEachTrigger(std::function<void(Trigger*)> fn) const;
 
+  // Returns true if any registered peripheral has isBusy() == true.
+  bool anyBusy() const;
+
   // Injects the event queue. Must be called before tickAll if triggers are used.
   void setEventQueue(TriggerEventQueue& queue) { _eventQueue = &queue; }
 

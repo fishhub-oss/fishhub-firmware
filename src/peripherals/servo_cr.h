@@ -32,6 +32,7 @@ public:
   int         sensePin() const         { return _sensePin; }
 
   bool replayCommand() const override { return false; }
+  bool isBusy()        const override { return _pendingRotation || _sensePending; }
 
 private:
   void _actuate(int rotationMs);
