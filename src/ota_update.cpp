@@ -5,7 +5,7 @@
 #include <mbedtls/sha256.h>
 
 static const int    OTA_CONNECT_TIMEOUT_MS = 30000;
-static const int    OTA_READ_TIMEOUT_S     = 30;
+static const int    OTA_READ_TIMEOUT_MS    = 30000; // max idle wait between chunks
 static const size_t OTA_BUF_SIZE           = 4096;
 
 bool performOtaUpdate(const String& url, const String& expectedSha256) {
@@ -39,23 +39,35 @@ bool performOtaUpdate(const String& url, const String& expectedSha256) {
     mbedtls_sha256_starts(&sha, /*is224=*/0);
 
     WiFiClient* stream = http.getStreamPtr();
-    stream->setTimeout(OTA_READ_TIMEOUT_S);
 
     static uint8_t buf[OTA_BUF_SIZE];
     int remaining = contentLen; // negative means unknown
     int totalWritten = 0;
     bool error = false;
+    unsigned long idleStart = millis();
 
-    // Don't gate on http.connected() — WiFiClientSecure can report the TCP
-    // socket as disconnected while SSL data is still buffered, which cuts
-    // large downloads short. readBytes returning 0 is the reliable EOF signal.
     while ((remaining != 0) && !error) {
+        int avail = stream->available();
+        if (avail <= 0) {
+            if (millis() - idleStart > OTA_READ_TIMEOUT_MS) {
+                Serial.println("[OTA] Read timeout — no data");
+                break;
+            }
+            // Yield so the FreeRTOS WiFi/TCP task can receive and decrypt
+            // the next TLS record. Without this, readBytes() busy-loops and
+            // starves the TCP stack, causing the server to stall and drop.
+            delay(1);
+            continue;
+        }
+        idleStart = millis(); // reset idle timer on any data
+
         int toRead = (remaining > 0)
             ? min(remaining, (int)sizeof(buf))
             : (int)sizeof(buf);
+        toRead = min(toRead, avail);
 
-        int n = stream->readBytes(buf, toRead);
-        if (n <= 0) break; // timeout or connection closed
+        int n = stream->read(buf, toRead);
+        if (n <= 0) break;
 
         mbedtls_sha256_update(&sha, buf, n);
 
