@@ -60,7 +60,11 @@ void FishHubMqttClient::begin(PeripheralManager &manager, TriggerEventQueue &eve
   _mqttPassword = nvsStore.get("mqtt_password");
 
   _mqttHost = nvsStore.get("mqtt_host");
-  if (_mqttHost.isEmpty())
+  // A non-empty MQTT_HOST in config.h is an explicit override — takes
+  // precedence over NVS so local dev builds can force a specific broker.
+  if (MQTT_HOST[0] != '\0')
+    _mqttHost = MQTT_HOST;
+  else if (_mqttHost.isEmpty())
     _mqttHost = MQTT_HOST;
   _mqttPort = MQTT_PORT;
 
@@ -72,6 +76,13 @@ void FishHubMqttClient::begin(PeripheralManager &manager, TriggerEventQueue &eve
 #endif
   _client.setBufferSize(1024);
   _client.setKeepAlive(30);
+  Serial.printf("MQTT: broker %s:%d (%s)\n", _mqttHost.c_str(), _mqttPort,
+#ifdef MQTT_TLS
+                "TLS"
+#else
+                "plain TCP"
+#endif
+  );
   _client.setServer(_mqttHost.c_str(), _mqttPort);
   _client.setCallback([this](char *topic, byte *payload, unsigned int len)
                       { onMessage(topic, payload, len); });
