@@ -208,9 +208,9 @@ Time-window–based on/off logic used by `RelayActuator`.
 
 ## `FishHubMqttClient` (`src/mqtt_client.h/.cpp`)
 
-Manages the TLS MQTT connection and routes inbound commands to `PeripheralManager`.
+Manages the MQTT connection and routes inbound commands to `PeripheralManager`.
 
-- Connects to HiveMQ Cloud on port 8883 using the ISRG Root X1 CA.
+- Connects to the broker using plain TCP (or TLS when `MQTT_TLS` is defined).
 - Subscribes to `fishhub/<device_id>/commands/#`.
 - On each message, extracts the peripheral name from the last topic segment and calls `PeripheralManager::dispatchCommand()`.
 - For peripherals with `replayCommand() == false`, persists the last processed command ID in NVS under `cmd_<name>` and skips duplicates.

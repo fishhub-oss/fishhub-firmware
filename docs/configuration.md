@@ -39,9 +39,9 @@ If activation fails (wrong code, Wi-Fi unreachable, server error, or 60 s poll t
 | `wifi_pass` | Wi-Fi password |
 | `device_id` | UUID assigned by the server |
 | `device_jwt` | Bearer token for authenticating to the server |
-| `mqtt_username` | HiveMQ Cloud username |
-| `mqtt_password` | HiveMQ Cloud password |
-| `mqtt_host` | HiveMQ Cloud hostname |
+| `mqtt_username` | MQTT broker username |
+| `mqtt_password` | MQTT broker password |
+| `mqtt_host` | MQTT broker hostname |
 | `provisioned` | Atomicity flag — written `"1"` last; absent means provisioning was interrupted |
 
 The `provisioned` flag makes writes atomic: if power is lost between writing individual keys and setting the flag, `isProvisioned()` returns `false` and the device re-enters AP mode on the next boot so the user can try again.
@@ -76,8 +76,7 @@ Then fill in the defines:
 
 #define SERVER_URL   "http://192.168.x.x:8080"
 
-#define MQTT_HOST    "your-cluster.hivemq.cloud"
-#define MQTT_PORT    8883
+#define MQTT_PORT    1883   // or your broker's port (e.g. Railway TCP proxy port)
 #define DEVICE_ID    ""   // leave empty — populated by provisioning
 ```
 
@@ -86,8 +85,8 @@ Then fill in the defines:
 | `WIFI_SSID` | SSID of the Wi-Fi network the ESP32 will join (NVS takes precedence on provisioned devices) |
 | `WIFI_PASSWORD` | Wi-Fi password (NVS takes precedence) |
 | `SERVER_URL` | Base URL of the FishHub backend — compiled in at build time, never stored in NVS. Use the local IP; `localhost` won't resolve on device. `"/readings"` and `"/devices/..."` paths are appended by the firmware. |
-| `MQTT_HOST` | HiveMQ Cloud broker hostname (NVS takes precedence on provisioned devices) |
-| `MQTT_PORT` | HiveMQ Cloud broker port (default `8883`) |
+| `MQTT_HOST` | MQTT broker hostname (NVS takes precedence on provisioned devices) |
+| `MQTT_PORT` | MQTT broker port — compile-time only; defaults to `8883` with `MQTT_TLS`, `1883` without |
 | `DEVICE_ID` | Leave empty — populated automatically by provisioning |
 
 `SERVER_URL` is always read from `config.h` at compile time. `WIFI_SSID`, `WIFI_PASSWORD`, and `MQTT_HOST` are fallbacks used only when the corresponding NVS keys are empty.

@@ -2,7 +2,7 @@
 
 ESP32 Arduino firmware for FishHub aquarium monitoring. On first boot (or after a
 factory reset) the device starts a captive-portal Wi-Fi AP for provisioning. Once
-provisioned, it holds a persistent TLS MQTT connection: it **publishes sensor
+provisioned, it holds a persistent MQTT connection: it **publishes sensor
 readings and trigger events** over MQTT and **reacts to inbound MQTT messages**
 that provision peripherals, push automation triggers, set device config, and send
 commands. The device is online full-time — there is no deep-sleep / wake-and-POST
@@ -46,9 +46,9 @@ pio device monitor
 | Framework | Arduino |
 | Temperature sensor | DS18B20 via OneWire / DallasTemperature |
 | JSON serialization | ArduinoJson v7 |
-| Data transport | MQTT (PubSubClient) over TLS — readings + trigger events published, config/commands/peripherals/triggers received |
+| Data transport | MQTT (PubSubClient) — readings + trigger events published, config/commands/peripherals/triggers received |
 | HTTP client | ESP32 built-in HTTPClient — provisioning/activation only |
-| MQTT broker | HiveMQ Cloud (TLS, port 8883) in production; plain TCP supported for self-hosted brokers |
+| MQTT broker | Self-hosted broker on Railway (plain TCP via Railway TCP proxy); TLS supported via `MQTT_TLS` build flag |
 | Wire format | SenML JSON (RFC 8428) |
 | Auth | Device JWT stored in NVS (provisioned via captive portal) |
 | MQTT auth | Username / password stored in NVS (issued by the server at activation) |
