@@ -136,9 +136,11 @@ sensorTick()                 (every loop while in NORMAL_OPERATION)
 
 ## MQTT topic topology
 
-All topics are namespaced `fishhub/<device_id>/…`. The connection is TLS
-(ISRG Root X1 CA, port 8883 on HiveMQ Cloud) when `MQTT_TLS` is defined;
-plain TCP otherwise (e.g. a self-hosted broker behind a TCP proxy).
+All topics are namespaced `fishhub/<device_id>/…`. The connection uses TLS
+(ISRG Root X1 CA) when `MQTT_TLS` is defined at build time; plain TCP otherwise.
+The current production setup is a self-hosted broker on Railway accessed via a
+Railway TCP proxy (plain TCP, no `MQTT_TLS`). The broker port is compile-time
+(`MQTT_PORT`; set via build flags in CI or `config.h` locally).
 
 **Subscribes (inbound):**
 
