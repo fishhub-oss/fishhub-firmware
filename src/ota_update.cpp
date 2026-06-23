@@ -46,7 +46,10 @@ bool performOtaUpdate(const String& url, const String& expectedSha256) {
     int totalWritten = 0;
     bool error = false;
 
-    while ((remaining != 0) && http.connected() && !error) {
+    // Don't gate on http.connected() — WiFiClientSecure can report the TCP
+    // socket as disconnected while SSL data is still buffered, which cuts
+    // large downloads short. readBytes returning 0 is the reliable EOF signal.
+    while ((remaining != 0) && !error) {
         int toRead = (remaining > 0)
             ? min(remaining, (int)sizeof(buf))
             : (int)sizeof(buf);
